@@ -9,6 +9,10 @@ from datetime import datetime
 
 # Import our EventSource client for testing
 try:
+    import sys
+    import os
+    # Add the Server Plugin directory to path
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Konnected.indigoPlugin', 'Contents', 'Server Plugin'))
     from plugin import EventSourceClient
     EVENTSOURCE_AVAILABLE = True
 except ImportError:
