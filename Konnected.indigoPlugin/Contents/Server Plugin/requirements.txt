@@ -10,3 +10,7 @@
 
 # HTTP library for communicating with Konnected devices
 requests>=2.31.0
+
+# mDNS/zeroconf library for automatic device discovery
+# Optional but recommended for enhanced device discovery capabilities
+zeroconf>=0.147.0
