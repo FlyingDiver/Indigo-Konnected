@@ -69,12 +69,16 @@ class Plugin(indigo.PluginBase):
         self.update_threads = {}
         
         # Set up logging
-        if self.debug:
-            self.logger.setLevel(10)  # Debug level
-        else:
-            self.logger.setLevel(20)  # Info level
+        if hasattr(self, 'logger'):
+            if self.debug:
+                self.logger.setLevel(10)  # Debug level
+            else:
+                self.logger.setLevel(20)  # Info level
         
-        self.logger.info("Konnected Plugin initialized")
+        if hasattr(self, 'logger'):
+            self.logger.info("Konnected Plugin initialized")
+        else:
+            print("Konnected Plugin initialized (test mode)")
 
     def startup(self):
         """Plugin startup"""
