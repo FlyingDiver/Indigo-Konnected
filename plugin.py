@@ -9,13 +9,39 @@ Version: 1.0.0
 """
 
 import json
-import requests
 import socket
 import threading
 import time
 from datetime import datetime
 
-import indigo
+# Check for required modules
+try:
+    import requests
+except ImportError:
+    print("ERROR: requests module is required but not installed")
+    print("Please install with: pip3 install requests")
+    raise
+
+try:
+    import indigo
+except ImportError:
+    # This is expected when testing outside of Indigo
+    print("WARNING: indigo module not available (normal when testing)")
+    # Create a mock indigo module for testing
+    class MockIndigo:
+        class PluginBase:
+            def __init__(self, *args, **kwargs):
+                pass
+        class Dict(dict):
+            pass
+        class kDeviceAction:
+            TurnOn = "turnOn"
+            TurnOff = "turnOff"
+            Toggle = "toggle"
+        server = None
+        devices = None
+    
+    indigo = MockIndigo()
 
 # Constants for Konnected API
 KONNECTED_DISCOVERY_PORT = 1901
@@ -284,6 +310,77 @@ class Plugin(indigo.PluginBase):
             
             self.logger.info("Plugin preferences updated")
 
+    def validateDeviceConfigUi(self, values_dict, type_id, device_id):
+        """Validate device configuration"""
+        errors_dict = indigo.Dict()
+        
+        if type_id == "konnectedPanel":
+            # Validate IP address
+            ip_address = values_dict.get("ip_address", "").strip()
+            if not ip_address:
+                errors_dict["ip_address"] = "IP address is required"
+            else:
+                # Basic IP validation
+                parts = ip_address.split(".")
+                if len(parts) != 4:
+                    errors_dict["ip_address"] = "Invalid IP address format"
+                else:
+                    for part in parts:
+                        try:
+                            num = int(part)
+                            if num < 0 or num > 255:
+                                errors_dict["ip_address"] = "Invalid IP address range"
+                                break
+                        except ValueError:
+                            errors_dict["ip_address"] = "Invalid IP address format"
+                            break
+            
+            # Validate port
+            try:
+                port = int(values_dict.get("port", "80"))
+                if port < 1 or port > 65535:
+                    errors_dict["port"] = "Port must be between 1 and 65535"
+            except ValueError:
+                errors_dict["port"] = "Port must be a valid number"
+            
+            # Validate poll frequency
+            try:
+                freq = int(values_dict.get("poll_frequency", "30"))
+                if freq < 5 or freq > 600:
+                    errors_dict["poll_frequency"] = "Poll frequency must be between 5 and 600 seconds"
+            except ValueError:
+                errors_dict["poll_frequency"] = "Poll frequency must be a valid number"
+        
+        elif type_id == "konnectedSensor":
+            # Validate panel device selection
+            panel_device = values_dict.get("panel_device")
+            if not panel_device:
+                errors_dict["panel_device"] = "A panel device must be selected"
+            
+            # Validate zone number
+            try:
+                zone = int(values_dict.get("zone_number", "1"))
+                if zone < 1 or zone > 12:
+                    errors_dict["zone_number"] = "Zone number must be between 1 and 12"
+            except ValueError:
+                errors_dict["zone_number"] = "Zone number must be a valid number"
+        
+        elif type_id == "konnectedOutput":
+            # Validate panel device selection
+            panel_device = values_dict.get("panel_device")
+            if not panel_device:
+                errors_dict["panel_device"] = "A panel device must be selected"
+            
+            # Validate zone number
+            try:
+                zone = int(values_dict.get("zone_number", "7"))
+                if zone < 1 or zone > 12:
+                    errors_dict["zone_number"] = "Zone number must be between 1 and 12"
+            except ValueError:
+                errors_dict["zone_number"] = "Zone number must be a valid number"
+        
+        return (len(errors_dict) == 0, values_dict, errors_dict)
+
     ################################################################################
     # Action Methods
     ################################################################################
@@ -428,6 +525,10 @@ class KonnectedMonitorThread(threading.Thread):
                     self.device.updateStateOnServer("connection_status", "Connected")
                     self.device.updateStateOnServer("zones_configured", len(status.get("sensors", [])))
                     
+                    # Reset consecutive error counter on successful connection
+                    if hasattr(self, 'consecutive_errors'):
+                        self.consecutive_errors = 0
+                    
                     # Update associated sensor devices
                     for sensor_device in indigo.devices.iter("self.konnectedSensor"):
                         panel_id = sensor_device.pluginProps.get("panel_device")
@@ -435,12 +536,33 @@ class KonnectedMonitorThread(threading.Thread):
                             self.plugin.update_sensor_state(sensor_device, status)
                             
                 else:
-                    # Update connection status to disconnected
-                    self.device.updateStateOnServer("connection_status", "Disconnected")
+                    # Handle connection failure
+                    if not hasattr(self, 'consecutive_errors'):
+                        self.consecutive_errors = 0
+                    
+                    self.consecutive_errors += 1
+                    
+                    if self.plugin.retry_failed_connections and self.consecutive_errors < 5:
+                        # Update connection status to retrying
+                        self.device.updateStateOnServer("connection_status", "Retrying")
+                        self.plugin.logger.warning(f"Connection failed for {self.device.name}, attempt {self.consecutive_errors}/5")
+                    else:
+                        # Update connection status to disconnected
+                        self.device.updateStateOnServer("connection_status", "Disconnected")
                     
             except Exception as e:
                 self.plugin.logger.error(f"Error in monitor thread for {self.device.name}: {e}")
                 self.device.updateStateOnServer("connection_status", "Error")
+                
+                if not hasattr(self, 'consecutive_errors'):
+                    self.consecutive_errors = 0
+                
+                self.consecutive_errors += 1
+                
+                # If too many consecutive errors, increase poll frequency to reduce load
+                if self.consecutive_errors >= 3:
+                    poll_frequency = min(poll_frequency * 2, 300)  # Cap at 5 minutes
+                    self.plugin.logger.warning(f"Increased poll frequency to {poll_frequency}s due to errors")
                 
             # Wait for next poll cycle
             for _ in range(poll_frequency * 10):  # Check stop flag every 0.1 seconds
