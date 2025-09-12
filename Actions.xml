@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Actions>
+    <Action id="discoverDevices" deviceFilter="self">
+        <Name>Discover Konnected Devices</Name>
+        <CallbackMethod>discover_devices_action</CallbackMethod>
+    </Action>
+    
+    <Action id="refreshPanelStatus" deviceFilter="self.konnectedPanel">
+        <Name>Refresh Panel Status</Name>
+        <CallbackMethod>refresh_panel_status_action</CallbackMethod>
+    </Action>
+    
+    <Action id="testPanelConnection" deviceFilter="self.konnectedPanel">
+        <Name>Test Panel Connection</Name>
+        <CallbackMethod>test_panel_connection_action</CallbackMethod>
+    </Action>
+    
+    <Action id="activateOutput" deviceFilter="self.konnectedOutput">
+        <Name>Activate Output</Name>
+        <CallbackMethod>activate_output_action</CallbackMethod>
+        <ConfigUI>
+            <Field id="duration" type="textfield" defaultValue="5">
+                <Label>Duration (seconds, 0 for permanent):</Label>
+            </Field>
+        </ConfigUI>
+    </Action>
+</Actions>
