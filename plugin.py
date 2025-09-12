@@ -48,6 +48,9 @@ KONNECTED_DISCOVERY_PORT = 1901
 KONNECTED_DEFAULT_PORT = 80
 DISCOVERY_MESSAGE = b"SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: ssdp:discover\r\nST: urn:konnected-io:device:Security:1\r\nMX: 5\r\n\r\n"
 
+# GDO Blaq specific constants
+GDO_DISCOVERY_MESSAGE = b"SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: ssdp:discover\r\nST: urn:konnected-io:device:GDO:1\r\nMX: 5\r\n\r\n"
+
 ################################################################################
 class Plugin(indigo.PluginBase):
     """Main plugin class for Konnected integration"""
@@ -101,6 +104,8 @@ class Plugin(indigo.PluginBase):
         
         if device.deviceTypeId == "konnectedPanel":
             self.start_device_monitoring(device)
+        elif device.deviceTypeId == "konnectedGDO":
+            self.start_gdo_monitoring(device)
         elif device.deviceTypeId in ["konnectedSensor", "konnectedOutput"]:
             # These devices are managed through their parent panel
             self.logger.debug(f"Sensor/output device {device.name} managed by panel")
@@ -119,6 +124,16 @@ class Plugin(indigo.PluginBase):
             self.update_threads[device.id].stop()
         
         thread = KonnectedMonitorThread(self, device)
+        thread.daemon = True
+        thread.start()
+        self.update_threads[device.id] = thread
+
+    def start_gdo_monitoring(self, device):
+        """Start monitoring thread for a GDO Blaq device"""
+        if device.id in self.update_threads:
+            self.update_threads[device.id].stop()
+        
+        thread = GDOMonitorThread(self, device)
         thread.daemon = True
         thread.start()
         self.update_threads[device.id] = thread
@@ -174,6 +189,62 @@ class Plugin(indigo.PluginBase):
             
         except Exception as e:
             self.logger.error(f"Error getting device status from {ip_address}: {e}")
+            return None
+
+    def get_gdo_status(self, ip_address, port=80, username=None, password=None):
+        """Get status information from a GDO Blaq device"""
+        try:
+            auth = None
+            if username and password:
+                auth = (username, password)
+            
+            # Get door status
+            door_url = f"http://{ip_address}:{port}/cover/garage_door"
+            door_response = requests.get(door_url, auth=auth, timeout=self.connection_timeout)
+            door_response.raise_for_status()
+            door_data = door_response.json()
+            
+            # Get light status
+            light_url = f"http://{ip_address}:{port}/light/garage_light"
+            light_response = requests.get(light_url, auth=auth, timeout=self.connection_timeout)
+            light_response.raise_for_status()
+            light_data = light_response.json()
+            
+            # Get lock status
+            lock_url = f"http://{ip_address}:{port}/lock/lock"
+            lock_response = requests.get(lock_url, auth=auth, timeout=self.connection_timeout)
+            lock_response.raise_for_status()
+            lock_data = lock_response.json()
+            
+            # Try to get optional sensors (motion, obstruction)
+            motion_data = None
+            try:
+                motion_url = f"http://{ip_address}:{port}/binary_sensor/motion"
+                motion_response = requests.get(motion_url, auth=auth, timeout=self.connection_timeout)
+                motion_response.raise_for_status()
+                motion_data = motion_response.json()
+            except:
+                pass  # Motion sensor not available
+                
+            obstruction_data = None
+            try:
+                obstruction_url = f"http://{ip_address}:{port}/binary_sensor/obstruction"
+                obstruction_response = requests.get(obstruction_url, auth=auth, timeout=self.connection_timeout)
+                obstruction_response.raise_for_status()
+                obstruction_data = obstruction_response.json()
+            except:
+                pass  # Obstruction sensor not available
+            
+            return {
+                'door': door_data,
+                'light': light_data,
+                'lock': lock_data,
+                'motion': motion_data,
+                'obstruction': obstruction_data
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error getting GDO status from {ip_address}: {e}")
             return None
 
     def update_sensor_state(self, device, zone_data):
@@ -249,6 +320,134 @@ class Plugin(indigo.PluginBase):
         except Exception as e:
             self.logger.error(f"Error setting output state for {device.name}: {e}")
             return False
+
+    def control_gdo_door(self, device, command, position=None):
+        """Control GDO Blaq garage door"""
+        try:
+            ip_address = device.pluginProps.get("ip_address")
+            port = int(device.pluginProps.get("port", "80"))
+            username = device.pluginProps.get("auth_username")
+            password = device.pluginProps.get("auth_password")
+            
+            auth = None
+            if username and password:
+                auth = (username, password)
+            
+            # Map commands to endpoints
+            endpoint_map = {
+                'open': '/cover/garage_door/open',
+                'close': '/cover/garage_door/close',
+                'stop': '/cover/garage_door/stop',
+                'toggle': '/cover/garage_door/toggle'
+            }
+            
+            if command == 'position' and position is not None:
+                url = f"http://{ip_address}:{port}/cover/garage_door/set"
+                params = {'position': position / 100.0}  # Convert percentage to decimal
+                response = requests.post(url, params=params, auth=auth, timeout=self.connection_timeout)
+            else:
+                endpoint = endpoint_map.get(command)
+                if not endpoint:
+                    self.logger.error(f"Unknown GDO command: {command}")
+                    return False
+                    
+                url = f"http://{ip_address}:{port}{endpoint}"
+                response = requests.post(url, auth=auth, timeout=self.connection_timeout)
+            
+            response.raise_for_status()
+            self.logger.info(f"GDO door command '{command}' sent to {device.name}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error controlling GDO door for {device.name}: {e}")
+            return False
+
+    def control_gdo_light(self, device, command):
+        """Control GDO Blaq garage light"""
+        try:
+            ip_address = device.pluginProps.get("ip_address")
+            port = int(device.pluginProps.get("port", "80"))
+            username = device.pluginProps.get("auth_username")
+            password = device.pluginProps.get("auth_password")
+            
+            auth = None
+            if username and password:
+                auth = (username, password)
+            
+            # Map commands to endpoints
+            endpoint_map = {
+                'turn_on': '/light/garage_light/turn_on',
+                'turn_off': '/light/garage_light/turn_off',
+                'toggle': '/light/garage_light/toggle'
+            }
+            
+            endpoint = endpoint_map.get(command)
+            if not endpoint:
+                self.logger.error(f"Unknown light command: {command}")
+                return False
+                
+            url = f"http://{ip_address}:{port}{endpoint}"
+            response = requests.post(url, auth=auth, timeout=self.connection_timeout)
+            response.raise_for_status()
+            
+            self.logger.info(f"GDO light command '{command}' sent to {device.name}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error controlling GDO light for {device.name}: {e}")
+            return False
+
+    def update_gdo_states(self, device, status_data):
+        """Update GDO device states based on status data"""
+        if not status_data:
+            return
+            
+        try:
+            # Update door states
+            if 'door' in status_data and status_data['door']:
+                door_data = status_data['door']
+                
+                # Door state (OPEN/CLOSED)
+                door_state = door_data.get('state', 'UNKNOWN')
+                device.updateStateOnServer("door_state", door_state)
+                
+                # Current operation (IDLE/OPENING/CLOSING)
+                door_operation = door_data.get('current_operation', 'UNKNOWN')
+                device.updateStateOnServer("door_operation", door_operation)
+                
+                # Door position (0-100%)
+                door_value = door_data.get('value', 0)
+                door_position = int(door_value * 100) if door_value is not None else 0
+                device.updateStateOnServer("door_position", door_position)
+            
+            # Update light state
+            if 'light' in status_data and status_data['light']:
+                light_data = status_data['light']
+                light_state = light_data.get('state', 'OFF') == 'ON'
+                device.updateStateOnServer("light_state", light_state)
+            
+            # Update lock state
+            if 'lock' in status_data and status_data['lock']:
+                lock_data = status_data['lock']
+                lock_state = lock_data.get('state', 'UNKNOWN')
+                device.updateStateOnServer("lock_state", lock_state)
+            
+            # Update motion sensor
+            if 'motion' in status_data and status_data['motion']:
+                motion_data = status_data['motion']
+                motion_detected = motion_data.get('value', False)
+                device.updateStateOnServer("motion_detected", motion_detected)
+            
+            # Update obstruction sensor
+            if 'obstruction' in status_data and status_data['obstruction']:
+                obstruction_data = status_data['obstruction']
+                obstruction_detected = obstruction_data.get('value', False)
+                device.updateStateOnServer("obstruction_detected", obstruction_detected)
+            
+            self.logger.debug(f"Updated GDO states for {device.name}")
+            
+        except Exception as e:
+            self.logger.error(f"Error updating GDO states for {device.name}: {e}")
 
     def actionControlDevice(self, action, device):
         """Handle device control actions"""
@@ -379,6 +578,43 @@ class Plugin(indigo.PluginBase):
             except ValueError:
                 errors_dict["zone_number"] = "Zone number must be a valid number"
         
+        elif type_id == "konnectedGDO":
+            # Validate IP address
+            ip_address = values_dict.get("ip_address", "").strip()
+            if not ip_address:
+                errors_dict["ip_address"] = "IP address is required"
+            else:
+                # Basic IP validation
+                parts = ip_address.split(".")
+                if len(parts) != 4:
+                    errors_dict["ip_address"] = "Invalid IP address format"
+                else:
+                    for part in parts:
+                        try:
+                            num = int(part)
+                            if num < 0 or num > 255:
+                                errors_dict["ip_address"] = "Invalid IP address range"
+                                break
+                        except ValueError:
+                            errors_dict["ip_address"] = "Invalid IP address format"
+                            break
+            
+            # Validate port
+            try:
+                port = int(values_dict.get("port", "80"))
+                if port < 1 or port > 65535:
+                    errors_dict["port"] = "Port must be between 1 and 65535"
+            except ValueError:
+                errors_dict["port"] = "Port must be a valid number"
+            
+            # Validate poll frequency
+            try:
+                freq = int(values_dict.get("poll_frequency", "10"))
+                if freq < 5 or freq > 600:
+                    errors_dict["poll_frequency"] = "Poll frequency must be between 5 and 600 seconds"
+            except ValueError:
+                errors_dict["poll_frequency"] = "Poll frequency must be a valid number"
+        
         return (len(errors_dict) == 0, values_dict, errors_dict)
 
     ################################################################################
@@ -448,6 +684,64 @@ class Plugin(indigo.PluginBase):
                 self.logger.info(f"Activated output {device.name} permanently")
 
     ################################################################################
+    # GDO Action Methods
+    ################################################################################
+    
+    def open_garage_door_action(self, plugin_action, device):
+        """Action method to open garage door"""
+        self.control_gdo_door(device, 'open')
+
+    def close_garage_door_action(self, plugin_action, device):
+        """Action method to close garage door"""
+        self.control_gdo_door(device, 'close')
+
+    def stop_garage_door_action(self, plugin_action, device):
+        """Action method to stop garage door"""
+        self.control_gdo_door(device, 'stop')
+
+    def toggle_garage_door_action(self, plugin_action, device):
+        """Action method to toggle garage door"""
+        self.control_gdo_door(device, 'toggle')
+
+    def set_garage_door_position_action(self, plugin_action, device):
+        """Action method to set garage door position"""
+        try:
+            position = int(plugin_action.props.get("position", "50"))
+            position = max(0, min(100, position))  # Clamp to 0-100%
+            self.control_gdo_door(device, 'position', position)
+        except ValueError:
+            self.logger.error("Invalid position value for garage door")
+
+    def toggle_garage_light_action(self, plugin_action, device):
+        """Action method to toggle garage light"""
+        self.control_gdo_light(device, 'toggle')
+
+    def refresh_gdo_status_action(self, plugin_action, device):
+        """Action method to refresh GDO status immediately"""
+        ip_address = device.pluginProps.get("ip_address")
+        port = int(device.pluginProps.get("port", "80"))
+        username = device.pluginProps.get("auth_username")
+        password = device.pluginProps.get("auth_password")
+        
+        status = self.get_gdo_status(ip_address, port, username, password)
+        
+        if status:
+            device.updateStateOnServer("connection_status", "Connected")
+            self.update_gdo_states(device, status)
+            
+            door_state = status.get('door', {}).get('state', 'Unknown')
+            message = f"GDO {device.name} status refreshed successfully:\n"
+            message += f"  - Connection: Connected\n"
+            message += f"  - Door State: {door_state}\n"
+            message += f"  - Light: {'ON' if status.get('light', {}).get('state') == 'ON' else 'OFF'}"
+            
+        else:
+            device.updateStateOnServer("connection_status", "Disconnected")
+            message = f"Failed to connect to GDO {device.name} at {ip_address}:{port}"
+        
+        indigo.server.log(message)
+
+    ################################################################################
     # Menu Methods
     ################################################################################
     
@@ -491,6 +785,83 @@ https://github.com/FlyingDiver/Indigo-Konnected
         """
         
         indigo.server.log(help_text)
+
+################################################################################
+class GDOMonitorThread(threading.Thread):
+    """Thread to monitor a GDO Blaq device"""
+    
+    def __init__(self, plugin, device):
+        super(GDOMonitorThread, self).__init__()
+        self.plugin = plugin
+        self.device = device
+        self.stop_thread = False
+        
+    def stop(self):
+        """Stop the monitoring thread"""
+        self.stop_thread = True
+        
+    def run(self):
+        """Main monitoring loop for GDO devices"""
+        ip_address = self.device.pluginProps.get("ip_address")
+        port = int(self.device.pluginProps.get("port", "80"))
+        username = self.device.pluginProps.get("auth_username")
+        password = self.device.pluginProps.get("auth_password")
+        poll_frequency = int(self.device.pluginProps.get("poll_frequency", "10"))
+        
+        self.plugin.logger.debug(f"Starting GDO monitor thread for {self.device.name}")
+        
+        while not self.stop_thread:
+            try:
+                # Get device status
+                status = self.plugin.get_gdo_status(ip_address, port, username, password)
+                
+                if status:
+                    # Update device connection status
+                    self.device.updateStateOnServer("connection_status", "Connected")
+                    
+                    # Reset consecutive error counter on successful connection
+                    if hasattr(self, 'consecutive_errors'):
+                        self.consecutive_errors = 0
+                    
+                    # Update device states
+                    self.plugin.update_gdo_states(self.device, status)
+                            
+                else:
+                    # Handle connection failure
+                    if not hasattr(self, 'consecutive_errors'):
+                        self.consecutive_errors = 0
+                    
+                    self.consecutive_errors += 1
+                    
+                    if self.plugin.retry_failed_connections and self.consecutive_errors < 5:
+                        # Update connection status to retrying
+                        self.device.updateStateOnServer("connection_status", "Retrying")
+                        self.plugin.logger.warning(f"GDO connection failed for {self.device.name}, attempt {self.consecutive_errors}/5")
+                    else:
+                        # Update connection status to disconnected
+                        self.device.updateStateOnServer("connection_status", "Disconnected")
+                    
+            except Exception as e:
+                self.plugin.logger.error(f"Error in GDO monitor thread for {self.device.name}: {e}")
+                self.device.updateStateOnServer("connection_status", "Error")
+                
+                if not hasattr(self, 'consecutive_errors'):
+                    self.consecutive_errors = 0
+                
+                self.consecutive_errors += 1
+                
+                # If too many consecutive errors, increase poll frequency to reduce load
+                if self.consecutive_errors >= 3:
+                    poll_frequency = min(poll_frequency * 2, 300)  # Cap at 5 minutes
+                    self.plugin.logger.warning(f"Increased GDO poll frequency to {poll_frequency}s due to errors")
+                
+            # Wait for next poll cycle
+            for _ in range(poll_frequency * 10):  # Check stop flag every 0.1 seconds
+                if self.stop_thread:
+                    break
+                time.sleep(0.1)
+        
+        self.plugin.logger.debug(f"GDO monitor thread stopped for {self.device.name}")
 
 ################################################################################
 class KonnectedMonitorThread(threading.Thread):

@@ -105,4 +105,74 @@
         </States>
         <UiDisplayStateId>onOffState</UiDisplayStateId>
     </Device>
+
+    <Device type="custom" id="konnectedGDO">
+        <Name>Konnected GDO Blaq</Name>
+        <ConfigUI>
+            <Field id="ip_address" type="textfield" defaultValue="">
+                <Label>IP Address:</Label>
+            </Field>
+            <Field id="port" type="textfield" defaultValue="80">
+                <Label>Port:</Label>
+            </Field>
+            <Field id="auth_username" type="textfield" defaultValue="">
+                <Label>Username (if authentication enabled):</Label>
+            </Field>
+            <Field id="auth_password" type="textfield" defaultValue="">
+                <Label>Password (if authentication enabled):</Label>
+            </Field>
+            <Field id="poll_frequency" type="menu" defaultValue="10">
+                <Label>Polling Frequency (seconds):</Label>
+                <List>
+                    <Option value="5">5 seconds</Option>
+                    <Option value="10">10 seconds</Option>
+                    <Option value="30">30 seconds</Option>
+                    <Option value="60">60 seconds</Option>
+                </List>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="door_state">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Door State</TriggerLabel>
+                <ControlPageLabel>Door State</ControlPageLabel>
+            </State>
+            <State id="door_operation">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Door Operation</TriggerLabel>
+                <ControlPageLabel>Door Operation</ControlPageLabel>
+            </State>
+            <State id="door_position">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Door Position</TriggerLabel>
+                <ControlPageLabel>Door Position (%)</ControlPageLabel>
+            </State>
+            <State id="light_state">
+                <ValueType>Boolean</ValueType>
+                <TriggerLabel>Light State</TriggerLabel>
+                <ControlPageLabel>Light State</ControlPageLabel>
+            </State>
+            <State id="lock_state">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Lock State</TriggerLabel>
+                <ControlPageLabel>Lock State</ControlPageLabel>
+            </State>
+            <State id="motion_detected">
+                <ValueType>Boolean</ValueType>
+                <TriggerLabel>Motion Detected</TriggerLabel>
+                <ControlPageLabel>Motion Detected</ControlPageLabel>
+            </State>
+            <State id="obstruction_detected">
+                <ValueType>Boolean</ValueType>
+                <TriggerLabel>Obstruction Detected</TriggerLabel>
+                <ControlPageLabel>Obstruction Detected</ControlPageLabel>
+            </State>
+            <State id="connection_status">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Connection Status</TriggerLabel>
+                <ControlPageLabel>Connection Status</ControlPageLabel>
+            </State>
+        </States>
+        <UiDisplayStateId>door_state</UiDisplayStateId>
+    </Device>
 </Devices>

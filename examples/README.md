@@ -50,6 +50,17 @@ This directory contains example configurations and documentation for setting up 
    - Zone Number: "8"
    - Output Type: "strobe" (Strobe Light)
 
+### GDO Blaq Device Configurations
+
+7. **GDO Blaq Garage Controller**
+   - Device Type: Konnected GDO Blaq
+   - Name: "Main Garage Door"
+   - IP Address: "192.168.1.200"
+   - Port: "80"
+   - Username: "" (leave blank if no authentication)
+   - Password: "" (leave blank if no authentication)
+   - Polling Frequency: "10" (10 seconds)
+
 ## Zone Number Guidelines
 
 ### Konnected Alarm Panel (6-zone)
@@ -59,6 +70,11 @@ This directory contains example configurations and documentation for setting up 
 ### Konnected Alarm Panel Pro (12-zone)
 - Zones 1-12: Sensor inputs
 - Zones 7-12: Can be configured as relay outputs
+
+### GDO Blaq Devices
+- No zones - uses dedicated garage door, light, and sensor endpoints
+- Supports multiple garage doors per device (if equipped)
+- Motion and obstruction sensors are device-specific, not zone-based
 
 ### Zone Assignment Tips
 - Use lower numbered zones (1-6) for critical sensors like entry doors
@@ -120,6 +136,41 @@ Condition: becomes "armed"
 Action: Activate Siren Output for 30 seconds
 ```
 
+### GDO Blaq Examples
+
+### Garage Door Control
+```
+Trigger: Variable Changed (Away Mode)
+Variable: home_security_mode
+Condition: becomes "away"
+Action: Close Garage Door
+```
+
+### Garage Door Position
+```
+Trigger: Schedule
+Schedule: Daily at sunset
+Action: Set Garage Door Position to 25% (ventilation)
+```
+
+### Motion-Based Lighting
+```
+Trigger: Device State Changed
+Device: Main Garage Door
+State: motion_detected
+Condition: becomes true
+Action: Toggle Garage Light
+```
+
+### Obstruction Alert
+```
+Trigger: Device State Changed
+Device: Main Garage Door
+State: obstruction_detected
+Condition: becomes true
+Action: Send notification "Garage door obstruction detected"
+```
+
 ## Troubleshooting Common Issues
 
 ### Sensor Always Shows Same State
@@ -139,3 +190,23 @@ Action: Activate Siren Output for 30 seconds
 - Check physical relay connections
 - Ensure adequate power supply for connected devices
 - Test output directly from Konnected web interface first
+
+### GDO Blaq Issues
+
+### Garage Door Not Responding
+- Verify GDO device is powered on and connected to Wi-Fi
+- Check IP address and network connectivity
+- Ensure Web API is enabled on the device
+- Verify username/password if authentication is configured
+- Test commands directly from GDO web interface
+
+### Sensor States Not Updating
+- Check polling frequency (reduce if too high)
+- Verify motion and obstruction sensors are properly connected
+- Check device logs for error messages
+- Ensure GDO firmware is up to date
+
+### Authentication Errors
+- Double-check username and password settings
+- Ensure Web API authentication is properly configured on device
+- Try connecting without authentication first to test basic connectivity
