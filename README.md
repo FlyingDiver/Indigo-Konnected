@@ -65,12 +65,14 @@ Smart garage door controllers with advanced features.
 - Obstruction sensor monitoring
 - Remote control lock/unlock
 - Real-time door position tracking
+- **EventSource (SSE) monitoring**: Real-time status updates without polling for improved responsiveness and reduced network traffic
 
 **Configuration:**
 - IP Address: The network IP address of your GDO Blaq device
 - Port: Network port (typically 80)
 - Username/Password: Optional authentication credentials
-- Polling Frequency: How often to check for status updates (5-60 seconds)
+- **Use EventSource (SSE)**: Enable Server-Sent Events for real-time monitoring (recommended)
+- Polling Frequency: Fallback polling interval when SSE is disabled or unavailable (5-60 seconds)
 
 ## Installation
 
@@ -124,7 +126,8 @@ Smart garage door controllers with advanced features.
    - **IP Address**: Enter the IP address of your GDO Blaq device
    - **Port**: Usually 80 (default)
    - **Username/Password**: Enter credentials if authentication is enabled
-   - **Polling Frequency**: Choose how often to check for updates (10 seconds recommended)
+   - **Use EventSource (SSE)**: Leave enabled for real-time updates (recommended)
+   - **Polling Frequency**: Fallback polling interval (10 seconds recommended)
 
 ## Actions and Controls
 
@@ -154,6 +157,18 @@ Smart garage door controllers with advanced features.
 2. **Connection Failed**: Check IP address and ensure the device is powered on
 3. **Sensor Not Updating**: Verify zone numbers and check physical connections
 4. **Authentication Errors**: Ensure auth token matches your Konnected device configuration
+5. **GDO EventSource Issues**: 
+   - If SSE connection fails, the plugin automatically falls back to polling
+   - Check device logs for "EventSource failed" messages
+   - Disable SSE in device configuration if persistent issues occur
+   - Verify firewall allows persistent HTTP connections
+
+### Connection Status Indicators
+
+- **Connected (SSE)**: Device is monitored via real-time EventSource connection
+- **Connected (Polling)**: Device is monitored via traditional polling
+- **Retrying**: Attempting to reconnect after connection failure
+- **Disconnected**: Unable to reach device after multiple attempts
 
 ### Debug Mode
 
@@ -168,11 +183,17 @@ The plugin communicates with Konnected devices using their REST API:
 - **Control Endpoint**: `PUT /device` - Controls relay outputs
 - **Discovery**: Uses SSDP (Simple Service Discovery Protocol) for device discovery
 
+**GDO Blaq Communication:**
+- **EventSource (SSE)**: Real-time monitoring via Server-Sent Events on endpoints like `/events`, `/stream`
+- **REST API**: Fallback polling using endpoints like `/cover/garage_door`, `/light/garage_light`
+- **Event Types**: Supports `door`, `light`, `state`, and `message` event types for comprehensive monitoring
+
 ### Network Requirements
 
 - Konnected devices must be on the same network as your Indigo server
 - UDP port 1900 must be available for SSDP discovery
 - HTTP communication on the configured port (default 80)
+- **For SSE**: Persistent HTTP connections for EventSource streams
 
 ## Support
 
