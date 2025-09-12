@@ -24,6 +24,21 @@ except ImportError:
     raise
 
 try:
+    import zeroconf
+    from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
+    ZEROCONF_AVAILABLE = True
+except ImportError:
+    print("INFO: zeroconf module not available - mDNS discovery will be disabled")
+    ZEROCONF_AVAILABLE = False
+    # Create stub classes when zeroconf is not available
+    class ServiceListener:
+        pass
+    class Zeroconf:
+        pass
+    class ServiceBrowser:
+        pass
+
+try:
     import indigo
 except ImportError:
     # This is expected when testing outside of Indigo
@@ -51,6 +66,47 @@ DISCOVERY_MESSAGE = b"SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: ss
 
 # GDO Blaq specific constants
 GDO_DISCOVERY_MESSAGE = b"SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: ssdp:discover\r\nST: urn:konnected-io:device:GDO:1\r\nMX: 5\r\n\r\n"
+
+# mDNS service types for Konnected devices
+KONNECTED_MDNS_SERVICE = "_konnected._tcp.local."
+GDO_MDNS_SERVICE = "_gdoblaq._tcp.local."
+
+################################################################################
+class KonnectedServiceListener(ServiceListener):
+    """mDNS Service Listener for Konnected devices"""
+    
+    def __init__(self, plugin):
+        self.plugin = plugin
+        self.discovered_devices = []
+        
+    def add_service(self, zc: Zeroconf, service_type: str, name: str) -> None:
+        """Handle service discovery"""
+        info = zc.get_service_info(service_type, name)
+        if info:
+            # Extract IP address from service info
+            addresses = info.addresses
+            if addresses:
+                ip_address = socket.inet_ntoa(addresses[0])
+                port = info.port
+                
+                device_info = {
+                    'ip': ip_address,
+                    'port': port,
+                    'name': name,
+                    'service_type': service_type,
+                    'properties': info.properties
+                }
+                
+                self.discovered_devices.append(device_info)
+                self.plugin.logger.info(f"mDNS discovered {service_type} device: {name} at {ip_address}:{port}")
+                
+    def remove_service(self, zc: Zeroconf, service_type: str, name: str) -> None:
+        """Handle service removal"""
+        self.plugin.logger.debug(f"mDNS service removed: {name}")
+        
+    def update_service(self, zc: Zeroconf, service_type: str, name: str) -> None:
+        """Handle service updates"""
+        self.plugin.logger.debug(f"mDNS service updated: {name}")
 
 ################################################################################
 class EventSourceClient:
@@ -279,18 +335,21 @@ class Plugin(indigo.PluginBase):
         self.update_threads[device.id] = thread
 
     def discover_devices(self):
-        """Discover Konnected devices on the network using SSDP"""
+        """Discover Konnected devices on the network using SSDP and mDNS"""
         self.logger.info("Starting Konnected device discovery")
         
+        discovered_devices = set()  # Use set to avoid duplicates
+        
+        # Try SSDP discovery first
         try:
             # Create UDP socket for SSDP discovery
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.settimeout(self.discovery_timeout)
             
-            # Send discovery message
+            # Send discovery message for Security panels
             sock.sendto(DISCOVERY_MESSAGE, ("239.255.255.250", 1900))
             
-            discovered = []
+            ssdp_devices = []
             while True:
                 try:
                     data, addr = sock.recvfrom(1024)
@@ -298,19 +357,91 @@ class Plugin(indigo.PluginBase):
                     
                     if "konnected-io" in response.lower():
                         ip = addr[0]
-                        self.logger.info(f"Discovered Konnected device at {ip}")
-                        discovered.append(ip)
+                        self.logger.info(f"SSDP discovered Konnected device at {ip}")
+                        ssdp_devices.append(ip)
                         
                 except socket.timeout:
                     break
                     
             sock.close()
             
-            self.logger.info(f"Discovery complete. Found {len(discovered)} devices")
-            return discovered
+            # Also try GDO discovery
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(self.discovery_timeout)
+            sock.sendto(GDO_DISCOVERY_MESSAGE, ("239.255.255.250", 1900))
+            
+            while True:
+                try:
+                    data, addr = sock.recvfrom(1024)
+                    response = data.decode('utf-8')
+                    
+                    if "konnected-io" in response.lower():
+                        ip = addr[0]
+                        self.logger.info(f"SSDP discovered GDO device at {ip}")
+                        ssdp_devices.append(ip)
+                        
+                except socket.timeout:
+                    break
+                    
+            sock.close()
+            
+            # Add SSDP discovered devices
+            for ip in ssdp_devices:
+                discovered_devices.add(ip)
+            
+            self.logger.info(f"SSDP discovery complete. Found {len(ssdp_devices)} devices")
             
         except Exception as e:
-            self.logger.error(f"Error during device discovery: {e}")
+            self.logger.error(f"Error during SSDP device discovery: {e}")
+        
+        # Try mDNS discovery
+        try:
+            mdns_devices = self.discover_devices_mdns()
+            for ip in mdns_devices:
+                discovered_devices.add(ip)
+                
+        except Exception as e:
+            self.logger.error(f"Error during mDNS device discovery: {e}")
+        
+        discovered_list = list(discovered_devices)
+        self.logger.info(f"Total discovery complete. Found {len(discovered_list)} unique devices")
+        return discovered_list
+
+    def discover_devices_mdns(self):
+        """Discover Konnected devices on the network using mDNS"""
+        if not ZEROCONF_AVAILABLE:
+            self.logger.warning("mDNS discovery not available - zeroconf module not installed")
+            return []
+            
+        self.logger.info("Starting Konnected device discovery via mDNS")
+        
+        try:
+            zc = Zeroconf()
+            listener = KonnectedServiceListener(self)
+            
+            # Create browsers for both Konnected services
+            browser_konnected = ServiceBrowser(zc, KONNECTED_MDNS_SERVICE, listener)
+            browser_gdo = ServiceBrowser(zc, GDO_MDNS_SERVICE, listener)
+            
+            # Wait for discovery timeout
+            time.sleep(self.discovery_timeout)
+            
+            # Stop browsing and close zeroconf
+            browser_konnected.cancel()
+            browser_gdo.cancel()
+            zc.close()
+            
+            # Extract IP addresses from discovered devices
+            discovered_ips = []
+            for device in listener.discovered_devices:
+                discovered_ips.append(device['ip'])
+                self.logger.info(f"mDNS found device: {device['name']} ({device['service_type']}) at {device['ip']}:{device['port']}")
+            
+            self.logger.info(f"mDNS discovery complete. Found {len(discovered_ips)} devices")
+            return discovered_ips
+            
+        except Exception as e:
+            self.logger.error(f"Error during mDNS device discovery: {e}")
             return []
 
     def get_device_status(self, ip_address, port=80, auth_token=None):

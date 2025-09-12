@@ -272,6 +272,59 @@ def test_plugin_logic():
     # Test EventSource functionality
     test_eventsource_parsing()
     test_gdo_sse_logic()
+    
+    # Test mDNS discovery functionality
+    test_mdns_discovery()
 
+def test_mdns_discovery():
+    """Test mDNS discovery functionality (mock test)"""
+    print("\n========================================")
+    print("Testing mDNS Discovery Functionality")  
+    print("========================================")
+    
+    try:
+        # Test importing zeroconf
+        try:
+            import zeroconf
+            print("zeroconf library: AVAILABLE")
+        except ImportError:
+            print("zeroconf library: NOT AVAILABLE - mDNS discovery would be disabled")
+            return
+            
+        # Test importing the plugin components
+        try:
+            from plugin import KonnectedServiceListener, KONNECTED_MDNS_SERVICE, GDO_MDNS_SERVICE
+            print("mDNS components imported: SUCCESS")
+        except ImportError as e:
+            print(f"mDNS components import failed: {e}")
+            return
+            
+        # Test service listener creation
+        try:
+            # Create a mock plugin object for testing
+            class MockPlugin:
+                class logger:
+                    @staticmethod
+                    def info(msg):
+                        print(f"  INFO: {msg}")
+                    @staticmethod    
+                    def debug(msg):
+                        print(f"  DEBUG: {msg}")
+            
+            mock_plugin = MockPlugin()
+            listener = KonnectedServiceListener(mock_plugin)
+            print("Service listener creation: SUCCESS")
+            print(f"Service types configured:")
+            print(f"  - Konnected Security: {KONNECTED_MDNS_SERVICE}")
+            print(f"  - GDO Blaq: {GDO_MDNS_SERVICE}")
+            
+        except Exception as e:
+            print(f"Service listener creation failed: {e}")
+            
+        print("mDNS discovery tests completed!")
+        
+    except Exception as e:
+        print(f"mDNS discovery test error: {e}")
+        
 if __name__ == "__main__":
     test_plugin_logic()
