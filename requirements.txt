@@ -1,0 +1,12 @@
+# Requirements for Indigo-Konnected plugin
+# 
+# This file specifies the external Python dependencies required for the
+# Indigo-Konnected plugin to function properly.
+#
+# Installation: pip3 install -r requirements.txt
+#
+# Note: The 'indigo' module is only available within the Indigo Home 
+# Automation environment and cannot be installed via pip.
+
+# HTTP library for communicating with Konnected devices
+requests>=2.31.0
