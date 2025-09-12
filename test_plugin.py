@@ -34,12 +34,42 @@ def simulate_konnected_response():
         ]
     }
 
+def simulate_gdo_response():
+    """Simulate a GDO Blaq device status response"""
+    return {
+        "door": {
+            "id": "garage_door",
+            "state": "CLOSED",
+            "current_operation": "IDLE", 
+            "value": 0
+        },
+        "light": {
+            "id": "garage_light",
+            "state": "OFF"
+        },
+        "lock": {
+            "id": "lock", 
+            "state": "UNLOCKED",
+            "value": 0
+        },
+        "motion": {
+            "id": "motion",
+            "state": "OFF",
+            "value": False
+        },
+        "obstruction": {
+            "id": "obstruction",
+            "state": "OFF", 
+            "value": False
+        }
+    }
+
 def test_plugin_logic():
     """Test core plugin logic without Indigo"""
     print("Testing Konnected Plugin Logic")
     print("=" * 40)
     
-    # Test status response parsing
+    # Test regular panel status response parsing
     status = simulate_konnected_response()
     print(f"Simulated device response:")
     print(json.dumps(status, indent=2))
@@ -62,7 +92,38 @@ def test_plugin_logic():
     print(f"  Version: {status.get('version')}")
     print(f"  Zones configured: {len(status.get('sensors', []))}")
     
-    print("\nTest completed successfully!")
+    # Test GDO Blaq functionality
+    print("\n" + "=" * 40)
+    print("Testing GDO Blaq Logic")
+    print("=" * 40)
+    
+    gdo_status = simulate_gdo_response()
+    print(f"Simulated GDO response:")
+    print(json.dumps(gdo_status, indent=2))
+    
+    # Test GDO state interpretation
+    print(f"\nGDO states:")
+    if 'door' in gdo_status:
+        door = gdo_status['door']
+        print(f"  Door: {door.get('state')} - {door.get('current_operation')} ({int(door.get('value', 0) * 100)}%)")
+    
+    if 'light' in gdo_status:
+        light = gdo_status['light'] 
+        print(f"  Light: {light.get('state')}")
+    
+    if 'lock' in gdo_status:
+        lock = gdo_status['lock']
+        print(f"  Lock: {lock.get('state')}")
+    
+    if 'motion' in gdo_status:
+        motion = gdo_status['motion']
+        print(f"  Motion: {'DETECTED' if motion.get('value') else 'NONE'}")
+        
+    if 'obstruction' in gdo_status:
+        obstruction = gdo_status['obstruction']
+        print(f"  Obstruction: {'PRESENT' if obstruction.get('value') else 'CLEAR'}")
+    
+    print("\nAll tests completed successfully!")
 
 if __name__ == "__main__":
     test_plugin_logic()

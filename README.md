@@ -10,8 +10,9 @@ This plugin enables integration between the [Indigo Home Automation](http://www.
 - **Device Discovery**: Automatically discover Konnected devices on your network
 - **Sensor Support**: Monitor door/window sensors, motion detectors, smoke alarms, CO detectors, water leak sensors, and more
 - **Output Control**: Control sirens, strobe lights, and other relay-based outputs
+- **GDO Blaq Support**: Full support for Konnected GDO Blaq garage door controllers
 - **Real-time Updates**: Monitor sensor states with configurable polling intervals
-- **Multiple Panels**: Support for multiple Konnected panels on the same network
+- **Multiple Panels**: Support for multiple Konnected panels and GDO devices on the same network
 
 ## Supported Device Types
 
@@ -54,6 +55,23 @@ Relay outputs for controlling external devices.
 - Zone Number: The zone/pin number for the output (typically 7-12)
 - Output Type: The type of output device
 
+### Konnected GDO Blaq
+Smart garage door controllers with advanced features.
+
+**Supported Features:**
+- Garage door control (open/close/stop/position)
+- Garage light control
+- Motion detection (if equipped)
+- Obstruction sensor monitoring
+- Remote control lock/unlock
+- Real-time door position tracking
+
+**Configuration:**
+- IP Address: The network IP address of your GDO Blaq device
+- Port: Network port (typically 80)
+- Username/Password: Optional authentication credentials
+- Polling Frequency: How often to check for status updates (5-60 seconds)
+
 ## Installation
 
 1. Download the plugin from the [Releases](https://github.com/FlyingDiver/Indigo-Konnected/releases) page
@@ -63,7 +81,7 @@ Relay outputs for controlling external devices.
 ## Quick Start
 
 1. **Discover Devices**: Use the "Discover Konnected Devices" menu item to find devices on your network
-2. **Create Panel**: Create a new "Konnected Panel" device with the discovered IP address
+2. **Create Panel or GDO**: Create a new "Konnected Panel" device with the discovered IP address, or "Konnected GDO Blaq" for garage door controllers
 3. **Add Sensors**: Create "Konnected Sensor" devices for each sensor connected to your panel
 4. **Add Outputs**: Create "Konnected Output" devices for any relay outputs you want to control
 
@@ -98,6 +116,16 @@ Relay outputs for controlling external devices.
    - **Zone Number**: Enter the output zone number
    - **Output Type**: Choose the type of output device
 
+### Setting up GDO Blaq Devices
+
+1. Create a new device and select "Konnected GDO Blaq"
+2. Configure:
+   - **Name**: Give your GDO device a descriptive name
+   - **IP Address**: Enter the IP address of your GDO Blaq device
+   - **Port**: Usually 80 (default)
+   - **Username/Password**: Enter credentials if authentication is enabled
+   - **Polling Frequency**: Choose how often to check for updates (10 seconds recommended)
+
 ## Actions and Controls
 
 ### Available Actions
@@ -106,11 +134,17 @@ Relay outputs for controlling external devices.
 - **Refresh Panel Status**: Immediately update a panel's status
 - **Test Panel Connection**: Verify connection to a panel
 - **Activate Output**: Turn on an output for a specified duration
+- **Open/Close/Stop Garage Door**: Control GDO Blaq garage doors
+- **Set Garage Door Position**: Move door to specific position (0-100%)
+- **Toggle Garage Light**: Control GDO garage lighting
+- **Refresh GDO Status**: Update GDO device status immediately
 
 ### Device Controls
 
 - **Sensors**: Automatically update based on physical sensor state
 - **Outputs**: Can be turned on/off manually or via triggers/schedules
+- **GDO Doors**: Can be opened, closed, stopped, or positioned via actions
+- **GDO Lights**: Can be controlled independently of door operation
 
 ## Troubleshooting
 
