@@ -32,8 +32,8 @@ Validate all XML configuration files:
 ## Plugin Architecture
 
 ### Key Files
-- `plugin.py` - Main plugin implementation (24KB, ~800 lines)
-- `test_plugin.py` - Standalone test script for validation
+- `plugin.py` - Main plugin implementation (41KB, ~947 lines)
+- `test_plugin.py` - Standalone test script for validation (3.6KB, ~128 lines)
 - `Actions.xml` - Defines plugin actions (discovery, refresh, test, activate)
 - `Devices.xml` - Defines device types (Panel, Sensor, Output) 
 - `MenuItems.xml` - Plugin menu structure
@@ -64,20 +64,20 @@ ALWAYS run these validation steps:
 
 ### Testing Network Functionality
 The plugin uses HTTP requests to communicate with Konnected devices. Test network capabilities:
-```python
-import requests
-session = requests.Session()
-session.timeout = 5
-# Plugin creates HTTP sessions for API communication
+```bash
+python3 -c "import requests; session = requests.Session(); session.timeout = 5; print('Requests module: SUCCESS')"
 ```
 
-### Testing JSON Operations
+### Testing JSON Operations  
 The plugin parses JSON responses from Konnected devices:
-```python
-import json
-test_json = '{"mac": "12:34:56:78:9A:BC", "sensors": [{"zone": 1, "state": 0}]}'
-parsed = json.loads(test_json)
-# Plugin parses device status and sensor data
+```bash
+python3 -c "import json; test_json = '{\"mac\": \"12:34:56:78:9A:BC\", \"sensors\": [{\"zone\": 1, \"state\": 0}]}'; parsed = json.loads(test_json); print('JSON parsing: SUCCESS')"
+```
+
+### Testing Socket and Threading
+The plugin uses socket operations for SSDP discovery and threading for background monitoring:
+```bash
+python3 -c "import socket, threading; print('Socket and threading modules: SUCCESS')"
 ```
 
 ## Common Tasks
@@ -120,8 +120,8 @@ parsed = json.loads(test_json)
 ### Root Directory Contents
 ```
 .
-├── plugin.py              # Main plugin code (24KB)
-├── test_plugin.py          # Test script (1.8KB)  
+├── plugin.py              # Main plugin code (41KB, ~947 lines)
+├── test_plugin.py          # Test script (3.6KB, ~128 lines)  
 ├── Actions.xml             # Plugin actions definition
 ├── Devices.xml             # Device type definitions
 ├── MenuItems.xml           # Menu structure
