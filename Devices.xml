@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Devices>
+    <Device type="custom" id="konnectedPanel">
+        <Name>Konnected Panel</Name>
+        <ConfigUI>
+            <Field id="ip_address" type="textfield" defaultValue="">
+                <Label>IP Address:</Label>
+            </Field>
+            <Field id="port" type="textfield" defaultValue="80">
+                <Label>Port:</Label>
+            </Field>
+            <Field id="auth_token" type="textfield" defaultValue="">
+                <Label>Authentication Token (if required):</Label>
+            </Field>
+            <Field id="poll_frequency" type="menu" defaultValue="30">
+                <Label>Polling Frequency (seconds):</Label>
+                <List>
+                    <Option value="5">5 seconds</Option>
+                    <Option value="10">10 seconds</Option>
+                    <Option value="30">30 seconds</Option>
+                    <Option value="60">60 seconds</Option>
+                    <Option value="300">5 minutes</Option>
+                </List>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="connection_status">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Connection Status</TriggerLabel>
+                <ControlPageLabel>Connection Status</ControlPageLabel>
+            </State>
+            <State id="zones_configured">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Zones Configured</TriggerLabel>
+                <ControlPageLabel>Zones Configured</ControlPageLabel>
+            </State>
+        </States>
+    </Device>
+    
+    <Device type="sensor" id="konnectedSensor">
+        <Name>Konnected Sensor</Name>
+        <ConfigUI>
+            <Field id="panel_device" type="menu">
+                <Label>Konnected Panel:</Label>
+                <List class="self" filter="" method="get_panel_devices"/>
+            </Field>
+            <Field id="zone_number" type="textfield" defaultValue="1">
+                <Label>Zone Number (1-6 or 1-12):</Label>
+            </Field>
+            <Field id="sensor_type" type="menu" defaultValue="contact">
+                <Label>Sensor Type:</Label>
+                <List>
+                    <Option value="contact">Contact Sensor (door/window)</Option>
+                    <Option value="motion">Motion Sensor</Option>
+                    <Option value="smoke">Smoke Detector</Option>
+                    <Option value="co">CO Detector</Option>
+                    <Option value="leak">Water Leak Sensor</Option>
+                    <Option value="generic">Generic Sensor</Option>
+                </List>
+            </Field>
+            <Field id="invert_logic" type="checkbox" defaultValue="false">
+                <Label>Invert Logic:</Label>
+                <Description>Check if sensor logic is inverted (normally closed becomes normally open)</Description>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="sensorValue">
+                <ValueType>Boolean</ValueType>
+                <TriggerLabel>Sensor State</TriggerLabel>
+                <ControlPageLabel>Sensor State</ControlPageLabel>
+            </State>
+            <State id="onOffState">
+                <ValueType>Boolean</ValueType>
+                <TriggerLabel>On/Off State</TriggerLabel>
+                <ControlPageLabel>On/Off State</ControlPageLabel>
+            </State>
+        </States>
+    </Device>
+    
+    <Device type="relay" id="konnectedOutput">
+        <Name>Konnected Output</Name>
+        <ConfigUI>
+            <Field id="panel_device" type="menu">
+                <Label>Konnected Panel:</Label>
+                <List class="self" filter="" method="get_panel_devices"/>
+            </Field>
+            <Field id="zone_number" type="textfield" defaultValue="7">
+                <Label>Zone Number (typically 7-12 for outputs):</Label>
+            </Field>
+            <Field id="output_type" type="menu" defaultValue="siren">
+                <Label>Output Type:</Label>
+                <List>
+                    <Option value="siren">Siren/Alarm</Option>
+                    <Option value="strobe">Strobe Light</Option>
+                    <Option value="relay">Generic Relay</Option>
+                </List>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="onOffState">
+                <ValueType>Boolean</ValueType>
+                <TriggerLabel>On/Off State</TriggerLabel>
+                <ControlPageLabel>On/Off State</ControlPageLabel>
+            </State>
+        </States>
+        <UiDisplayStateId>onOffState</UiDisplayStateId>
+    </Device>
+</Devices>

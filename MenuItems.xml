@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MenuItems>
+    <MenuItem id="discover_devices">
+        <Name>Discover Konnected Devices</Name>
+        <CallbackMethod>menu_discover_devices</CallbackMethod>
+    </MenuItem>
+    
+    <MenuItem id="separator1" />
+    
+    <MenuItem id="plugin_settings">
+        <Name>Plugin Settings...</Name>
+        <CallbackMethod>menu_plugin_settings</CallbackMethod>
+    </MenuItem>
+    
+    <MenuItem id="separator2" />
+    
+    <MenuItem id="help">
+        <Name>Help...</Name>
+        <CallbackMethod>menu_help</CallbackMethod>
+    </MenuItem>
+</MenuItems>

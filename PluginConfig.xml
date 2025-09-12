@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PluginConfig>
+    <Field id="debug" type="checkbox" defaultValue="false">
+        <Label>Enable Debug Logging</Label>
+        <Description>Enable detailed debug logging for troubleshooting</Description>
+    </Field>
+    
+    <Field id="separator1" type="separator"/>
+    
+    <Field id="discovery_timeout" type="textfield" defaultValue="5">
+        <Label>Device Discovery Timeout (seconds):</Label>
+        <Description>How long to wait for device discovery responses</Description>
+    </Field>
+    
+    <Field id="connection_timeout" type="textfield" defaultValue="10">
+        <Label>Connection Timeout (seconds):</Label>
+        <Description>Timeout for HTTP requests to Konnected devices</Description>
+    </Field>
+    
+    <Field id="separator2" type="separator"/>
+    
+    <Field id="auto_discovery" type="checkbox" defaultValue="true">
+        <Label>Auto-Discovery on Startup</Label>
+        <Description>Automatically discover devices when plugin starts</Description>
+    </Field>
+    
+    <Field id="retry_failed_connections" type="checkbox" defaultValue="true">
+        <Label>Retry Failed Connections</Label>
+        <Description>Automatically retry when device connections fail</Description>
+    </Field>
+</PluginConfig>
