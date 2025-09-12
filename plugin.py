@@ -13,6 +13,7 @@ import socket
 import threading
 import time
 from datetime import datetime
+import re
 
 # Check for required modules
 try:
@@ -50,6 +51,141 @@ DISCOVERY_MESSAGE = b"SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: ss
 
 # GDO Blaq specific constants
 GDO_DISCOVERY_MESSAGE = b"SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: ssdp:discover\r\nST: urn:konnected-io:device:GDO:1\r\nMX: 5\r\n\r\n"
+
+################################################################################
+class EventSourceClient:
+    """EventSource client for Server-Sent Events (SSE) connections"""
+    
+    def __init__(self, url, auth=None, timeout=30):
+        self.url = url
+        self.auth = auth
+        self.timeout = timeout
+        self.session = requests.Session()
+        self.response = None
+        self.event_callbacks = {}
+        self.stop_listening = False
+        
+    def add_event_listener(self, event_type, callback):
+        """Add a callback for specific event types"""
+        if event_type not in self.event_callbacks:
+            self.event_callbacks[event_type] = []
+        self.event_callbacks[event_type].append(callback)
+    
+    def remove_event_listener(self, event_type, callback):
+        """Remove a callback for specific event types"""
+        if event_type in self.event_callbacks and callback in self.event_callbacks[event_type]:
+            self.event_callbacks[event_type].remove(callback)
+    
+    def _parse_sse_event(self, event_data):
+        """Parse SSE event data into event object"""
+        event = {
+            'type': 'message',
+            'data': '',
+            'id': None,
+            'retry': None
+        }
+        
+        lines = event_data.strip().split('\n')
+        for line in lines:
+            if ':' in line:
+                key, value = line.split(':', 1)
+                key = key.strip()
+                value = value.strip()
+                
+                if key == 'event':
+                    event['type'] = value
+                elif key == 'data':
+                    if event['data']:
+                        event['data'] += '\n'
+                    event['data'] += value
+                elif key == 'id':
+                    event['id'] = value
+                elif key == 'retry':
+                    try:
+                        event['retry'] = int(value)
+                    except ValueError:
+                        pass
+        
+        return event
+    
+    def _fire_event(self, event):
+        """Fire event callbacks for the given event"""
+        event_type = event.get('type', 'message')
+        
+        # Fire callbacks for this specific event type
+        if event_type in self.event_callbacks:
+            for callback in self.event_callbacks[event_type]:
+                try:
+                    callback(event)
+                except Exception as e:
+                    print(f"Error in event callback: {e}")
+        
+        # Fire callbacks for 'all' events if registered
+        if 'all' in self.event_callbacks:
+            for callback in self.event_callbacks['all']:
+                try:
+                    callback(event)
+                except Exception as e:
+                    print(f"Error in event callback: {e}")
+    
+    def connect(self):
+        """Establish EventSource connection"""
+        try:
+            headers = {
+                'Accept': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive'
+            }
+            
+            self.response = self.session.get(
+                self.url,
+                headers=headers,
+                auth=self.auth,
+                stream=True,
+                timeout=self.timeout
+            )
+            self.response.raise_for_status()
+            return True
+            
+        except Exception as e:
+            print(f"Failed to connect to EventSource: {e}")
+            return False
+    
+    def listen(self):
+        """Listen for SSE events"""
+        if not self.response:
+            if not self.connect():
+                return False
+                
+        buffer = ""
+        
+        try:
+            for chunk in self.response.iter_content(chunk_size=1024, decode_unicode=True):
+                if self.stop_listening:
+                    break
+                    
+                if chunk:
+                    buffer += chunk
+                    
+                    # Process complete events (separated by double newline)
+                    while '\n\n' in buffer:
+                        event_data, buffer = buffer.split('\n\n', 1)
+                        if event_data.strip():
+                            event = self._parse_sse_event(event_data)
+                            self._fire_event(event)
+                            
+        except Exception as e:
+            print(f"Error listening to EventSource: {e}")
+            return False
+        
+        return True
+    
+    def close(self):
+        """Close the EventSource connection"""
+        self.stop_listening = True
+        if self.response:
+            self.response.close()
+            self.response = None
 
 ################################################################################
 class Plugin(indigo.PluginBase):
@@ -799,10 +935,104 @@ class GDOMonitorThread(threading.Thread):
         self.plugin = plugin
         self.device = device
         self.stop_thread = False
+        self.eventsource_client = None
+        self.consecutive_errors = 0
         
     def stop(self):
         """Stop the monitoring thread"""
         self.stop_thread = True
+        if self.eventsource_client:
+            self.eventsource_client.close()
+    
+    def _handle_sse_event(self, event):
+        """Handle incoming SSE events from GDO device"""
+        try:
+            event_type = event.get('type', 'message')
+            data = event.get('data', '')
+            
+            if not data:
+                return
+                
+            # Parse JSON data
+            try:
+                event_data = json.loads(data)
+            except json.JSONDecodeError:
+                self.plugin.logger.debug(f"Non-JSON SSE event data: {data}")
+                return
+            
+            # Update device connection status on any successful event
+            self.device.updateStateOnServer("connection_status", "Connected (SSE)")
+            self.consecutive_errors = 0
+            
+            # Handle different event types
+            if event_type == 'state' or event_type == 'message':
+                # This is a general state update - parse and update states
+                self.plugin.update_gdo_states(self.device, event_data)
+                self.plugin.logger.debug(f"Updated GDO states via SSE for {self.device.name}")
+                
+            elif event_type == 'door':
+                # Door-specific event
+                door_data = {'door': event_data}
+                self.plugin.update_gdo_states(self.device, door_data)
+                self.plugin.logger.debug(f"Updated GDO door state via SSE for {self.device.name}")
+                
+            elif event_type == 'light':
+                # Light-specific event  
+                light_data = {'light': event_data}
+                self.plugin.update_gdo_states(self.device, light_data)
+                self.plugin.logger.debug(f"Updated GDO light state via SSE for {self.device.name}")
+                
+            else:
+                self.plugin.logger.debug(f"Unknown SSE event type '{event_type}' for {self.device.name}")
+                
+        except Exception as e:
+            self.plugin.logger.error(f"Error handling SSE event for {self.device.name}: {e}")
+    
+    def _try_eventsource_monitoring(self, ip_address, port, auth):
+        """Try to use EventSource for monitoring"""
+        try:
+            # Try common SSE endpoints for GDO devices
+            sse_endpoints = ['/events', '/stream', '/api/events', '/api/stream']
+            
+            for endpoint in sse_endpoints:
+                sse_url = f"http://{ip_address}:{port}{endpoint}"
+                
+                self.plugin.logger.debug(f"Trying SSE endpoint: {sse_url}")
+                
+                # Create EventSource client
+                self.eventsource_client = EventSourceClient(sse_url, auth=auth, timeout=30)
+                
+                # Add event listeners
+                self.eventsource_client.add_event_listener('all', self._handle_sse_event)
+                
+                # Try to connect
+                if self.eventsource_client.connect():
+                    self.plugin.logger.info(f"Connected to SSE endpoint {sse_url} for {self.device.name}")
+                    
+                    # Listen for events (this blocks until connection fails or stop_thread is set)
+                    success = self.eventsource_client.listen()
+                    
+                    if success and not self.stop_thread:
+                        # Connection was closed by server or network issue
+                        self.plugin.logger.warning(f"SSE connection closed for {self.device.name}")
+                        
+                    return success
+                else:
+                    # This endpoint didn't work, try the next one
+                    self.eventsource_client.close()
+                    self.eventsource_client = None
+                    continue
+            
+            # No SSE endpoints worked
+            self.plugin.logger.debug(f"No working SSE endpoints found for {self.device.name}")
+            return False
+            
+        except Exception as e:
+            self.plugin.logger.debug(f"EventSource monitoring failed for {self.device.name}: {e}")
+            if self.eventsource_client:
+                self.eventsource_client.close()
+                self.eventsource_client = None
+            return False
         
     def run(self):
         """Main monitoring loop for GDO devices"""
@@ -810,60 +1040,89 @@ class GDOMonitorThread(threading.Thread):
         port = int(self.device.pluginProps.get("port", "80"))
         username = self.device.pluginProps.get("auth_username")
         password = self.device.pluginProps.get("auth_password")
+        use_eventsource = self.device.pluginProps.get("use_eventsource", True)
         poll_frequency = int(self.device.pluginProps.get("poll_frequency", "10"))
+        
+        auth = None
+        if username and password:
+            auth = (username, password)
         
         self.plugin.logger.debug(f"Starting GDO monitor thread for {self.device.name}")
         
-        while not self.stop_thread:
-            try:
-                # Get device status
-                status = self.plugin.get_gdo_status(ip_address, port, username, password)
+        # Try EventSource first if enabled
+        if use_eventsource:
+            self.plugin.logger.info(f"Attempting EventSource monitoring for {self.device.name}")
+            
+            while not self.stop_thread:
+                # Try EventSource monitoring
+                sse_success = self._try_eventsource_monitoring(ip_address, port, auth)
                 
-                if status:
-                    # Update device connection status
-                    self.device.updateStateOnServer("connection_status", "Connected")
+                if self.stop_thread:
+                    break
                     
-                    # Reset consecutive error counter on successful connection
-                    if hasattr(self, 'consecutive_errors'):
-                        self.consecutive_errors = 0
+                if not sse_success:
+                    self.consecutive_errors += 1
                     
-                    # Update device states
-                    self.plugin.update_gdo_states(self.device, status)
-                            
-                else:
-                    # Handle connection failure
-                    if not hasattr(self, 'consecutive_errors'):
+                    if self.consecutive_errors >= 3:
+                        # Too many SSE failures, fall back to polling
+                        self.plugin.logger.warning(f"EventSource failed {self.consecutive_errors} times for {self.device.name}, falling back to polling")
+                        break
+                    else:
+                        # Wait and retry SSE
+                        self.plugin.logger.info(f"EventSource failed for {self.device.name}, retrying in 10 seconds...")
+                        for _ in range(100):  # 10 seconds with 0.1s check intervals
+                            if self.stop_thread:
+                                break
+                            time.sleep(0.1)
+                        continue
+        
+        # Fall back to polling mode (original implementation)
+        if not self.stop_thread:
+            self.plugin.logger.info(f"Using polling monitoring for {self.device.name}")
+            
+            while not self.stop_thread:
+                try:
+                    # Get device status via polling
+                    status = self.plugin.get_gdo_status(ip_address, port, username, password)
+                    
+                    if status:
+                        # Update device connection status
+                        self.device.updateStateOnServer("connection_status", "Connected (Polling)")
+                        
+                        # Reset consecutive error counter on successful connection
                         self.consecutive_errors = 0
+                        
+                        # Update device states
+                        self.plugin.update_gdo_states(self.device, status)
+                                
+                    else:
+                        # Handle connection failure
+                        self.consecutive_errors += 1
+                        
+                        if self.plugin.retry_failed_connections and self.consecutive_errors < 5:
+                            # Update connection status to retrying
+                            self.device.updateStateOnServer("connection_status", "Retrying")
+                            self.plugin.logger.warning(f"GDO connection failed for {self.device.name}, attempt {self.consecutive_errors}/5")
+                        else:
+                            # Update connection status to disconnected
+                            self.device.updateStateOnServer("connection_status", "Disconnected")
+                        
+                except Exception as e:
+                    self.plugin.logger.error(f"Error in GDO monitor thread for {self.device.name}: {e}")
+                    self.device.updateStateOnServer("connection_status", "Error")
                     
                     self.consecutive_errors += 1
                     
-                    if self.plugin.retry_failed_connections and self.consecutive_errors < 5:
-                        # Update connection status to retrying
-                        self.device.updateStateOnServer("connection_status", "Retrying")
-                        self.plugin.logger.warning(f"GDO connection failed for {self.device.name}, attempt {self.consecutive_errors}/5")
-                    else:
-                        # Update connection status to disconnected
-                        self.device.updateStateOnServer("connection_status", "Disconnected")
+                    # If too many consecutive errors, increase poll frequency to reduce load
+                    if self.consecutive_errors >= 3:
+                        poll_frequency = min(poll_frequency * 2, 300)  # Cap at 5 minutes
+                        self.plugin.logger.warning(f"Increased GDO poll frequency to {poll_frequency}s due to errors")
                     
-            except Exception as e:
-                self.plugin.logger.error(f"Error in GDO monitor thread for {self.device.name}: {e}")
-                self.device.updateStateOnServer("connection_status", "Error")
-                
-                if not hasattr(self, 'consecutive_errors'):
-                    self.consecutive_errors = 0
-                
-                self.consecutive_errors += 1
-                
-                # If too many consecutive errors, increase poll frequency to reduce load
-                if self.consecutive_errors >= 3:
-                    poll_frequency = min(poll_frequency * 2, 300)  # Cap at 5 minutes
-                    self.plugin.logger.warning(f"Increased GDO poll frequency to {poll_frequency}s due to errors")
-                
-            # Wait for next poll cycle
-            for _ in range(poll_frequency * 10):  # Check stop flag every 0.1 seconds
-                if self.stop_thread:
-                    break
-                time.sleep(0.1)
+                # Wait for next poll cycle
+                for _ in range(poll_frequency * 10):  # Check stop flag every 0.1 seconds
+                    if self.stop_thread:
+                        break
+                    time.sleep(0.1)
         
         self.plugin.logger.debug(f"GDO monitor thread stopped for {self.device.name}")
 

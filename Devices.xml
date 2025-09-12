@@ -121,8 +121,13 @@
             <Field id="auth_password" type="textfield" defaultValue="">
                 <Label>Password (if authentication enabled):</Label>
             </Field>
+            <Field id="use_eventsource" type="checkbox" defaultValue="true">
+                <Label>Use EventSource (SSE) for real-time monitoring:</Label>
+                <Description>Enable Server-Sent Events for real-time status updates (more efficient than polling)</Description>
+            </Field>
             <Field id="poll_frequency" type="menu" defaultValue="10">
                 <Label>Polling Frequency (seconds):</Label>
+                <Description>Used as fallback when EventSource is disabled or unavailable</Description>
                 <List>
                     <Option value="5">5 seconds</Option>
                     <Option value="10">10 seconds</Option>
