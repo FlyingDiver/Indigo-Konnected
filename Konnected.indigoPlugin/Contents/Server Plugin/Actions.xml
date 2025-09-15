@@ -65,4 +65,45 @@
         <Name>Refresh GDO Status</Name>
         <CallbackMethod>refresh_gdo_status_action</CallbackMethod>
     </Action>
+
+    <!-- GDO White Actions -->
+    <Action id="openGarageDoorWhite" deviceFilter="self.konnectedGDOWhite">
+        <Name>Open Garage Door</Name>
+        <CallbackMethod>open_garage_door_white_action</CallbackMethod>
+    </Action>
+    
+    <Action id="closeGarageDoorWhite" deviceFilter="self.konnectedGDOWhite">
+        <Name>Close Garage Door</Name>
+        <CallbackMethod>close_garage_door_white_action</CallbackMethod>
+    </Action>
+    
+    <Action id="stopGarageDoorWhite" deviceFilter="self.konnectedGDOWhite">
+        <Name>Stop Garage Door</Name>
+        <CallbackMethod>stop_garage_door_white_action</CallbackMethod>
+    </Action>
+    
+    <Action id="toggleGarageDoorWhite" deviceFilter="self.konnectedGDOWhite">
+        <Name>Toggle Garage Door</Name>
+        <CallbackMethod>toggle_garage_door_white_action</CallbackMethod>
+    </Action>
+    
+    <Action id="setGarageDoorPositionWhite" deviceFilter="self.konnectedGDOWhite">
+        <Name>Set Garage Door Position</Name>
+        <CallbackMethod>set_garage_door_position_white_action</CallbackMethod>
+        <ConfigUI>
+            <Field id="position" type="textfield" defaultValue="50">
+                <Label>Position (0-100%):</Label>
+            </Field>
+        </ConfigUI>
+    </Action>
+    
+    <Action id="toggleGarageLightWhite" deviceFilter="self.konnectedGDOWhite">
+        <Name>Toggle Garage Light</Name>
+        <CallbackMethod>toggle_garage_light_white_action</CallbackMethod>
+    </Action>
+    
+    <Action id="refreshGDOWhiteStatus" deviceFilter="self.konnectedGDOWhite">
+        <Name>Refresh GDO White Status</Name>
+        <CallbackMethod>refresh_gdo_white_status_action</CallbackMethod>
+    </Action>
 </Actions>

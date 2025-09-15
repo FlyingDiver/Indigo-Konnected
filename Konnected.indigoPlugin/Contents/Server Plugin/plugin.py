@@ -67,9 +67,13 @@ DISCOVERY_MESSAGE = b"SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: ss
 # GDO Blaq specific constants
 GDO_DISCOVERY_MESSAGE = b"SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: ssdp:discover\r\nST: urn:konnected-io:device:GDO:1\r\nMX: 5\r\n\r\n"
 
+# GDO White specific constants
+GDO_WHITE_DISCOVERY_MESSAGE = b"SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: ssdp:discover\r\nST: urn:konnected-io:device:GDOWhite:1\r\nMX: 5\r\n\r\n"
+
 # mDNS service types for Konnected devices
 KONNECTED_MDNS_SERVICE = "_konnected._tcp.local."
 GDO_MDNS_SERVICE = "_gdoblaq._tcp.local."
+GDO_WHITE_MDNS_SERVICE = "_gdowhite._tcp.local."
 
 ################################################################################
 class KonnectedServiceListener(ServiceListener):
@@ -302,6 +306,8 @@ class Plugin(indigo.PluginBase):
             self.start_device_monitoring(device)
         elif device.deviceTypeId == "konnectedGDO":
             self.start_gdo_monitoring(device)
+        elif device.deviceTypeId == "konnectedGDOWhite":
+            self.start_gdo_white_monitoring(device)
         elif device.deviceTypeId in ["konnectedSensor", "konnectedOutput"]:
             # These devices are managed through their parent panel
             self.logger.debug(f"Sensor/output device {device.name} managed by panel")
@@ -330,6 +336,16 @@ class Plugin(indigo.PluginBase):
             self.update_threads[device.id].stop()
         
         thread = GDOMonitorThread(self, device)
+        thread.daemon = True
+        thread.start()
+        self.update_threads[device.id] = thread
+
+    def start_gdo_white_monitoring(self, device):
+        """Start monitoring thread for a GDO White device"""
+        if device.id in self.update_threads:
+            self.update_threads[device.id].stop()
+        
+        thread = GDOWhiteMonitorThread(self, device)
         thread.daemon = True
         thread.start()
         self.update_threads[device.id] = thread
@@ -385,6 +401,26 @@ class Plugin(indigo.PluginBase):
                     
             sock.close()
             
+            # Also try GDO White discovery
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(self.discovery_timeout)
+            sock.sendto(GDO_WHITE_DISCOVERY_MESSAGE, ("239.255.255.250", 1900))
+            
+            while True:
+                try:
+                    data, addr = sock.recvfrom(1024)
+                    response = data.decode('utf-8')
+                    
+                    if "konnected-io" in response.lower():
+                        ip = addr[0]
+                        self.logger.info(f"SSDP discovered GDO White device at {ip}")
+                        ssdp_devices.append(ip)
+                        
+                except socket.timeout:
+                    break
+                    
+            sock.close()
+            
             # Add SSDP discovered devices
             for ip in ssdp_devices:
                 discovered_devices.add(ip)
@@ -422,6 +458,7 @@ class Plugin(indigo.PluginBase):
             # Create browsers for both Konnected services
             browser_konnected = ServiceBrowser(zc, KONNECTED_MDNS_SERVICE, listener)
             browser_gdo = ServiceBrowser(zc, GDO_MDNS_SERVICE, listener)
+            browser_gdo_white = ServiceBrowser(zc, GDO_WHITE_MDNS_SERVICE, listener)
             
             # Wait for discovery timeout
             time.sleep(self.discovery_timeout)
@@ -429,6 +466,7 @@ class Plugin(indigo.PluginBase):
             # Stop browsing and close zeroconf
             browser_konnected.cancel()
             browser_gdo.cancel()
+            browser_gdo_white.cancel()
             zc.close()
             
             # Extract IP addresses from discovered devices
@@ -516,6 +554,96 @@ class Plugin(indigo.PluginBase):
             
         except Exception as e:
             self.logger.error(f"Error getting GDO status from {ip_address}: {e}")
+            return None
+
+    def get_gdo_white_status(self, ip_address, port=80, username=None, password=None):
+        """Get status information from a GDO White device"""
+        try:
+            auth = None
+            if username and password:
+                auth = (username, password)
+            
+            # GDO White devices may use different API endpoints
+            # Try common alternative paths for White devices
+            try:
+                # Try V2 API first (common for newer White devices)
+                door_url = f"http://{ip_address}:{port}/api/v2/cover/garage_door"
+                door_response = requests.get(door_url, auth=auth, timeout=self.connection_timeout)
+                door_response.raise_for_status()
+                door_data = door_response.json()
+                
+                # Get light status
+                light_url = f"http://{ip_address}:{port}/api/v2/light/garage_light"
+                light_response = requests.get(light_url, auth=auth, timeout=self.connection_timeout)
+                light_response.raise_for_status()
+                light_data = light_response.json()
+                
+            except (requests.exceptions.RequestException, ValueError):
+                # Fallback to alternative White API paths
+                door_url = f"http://{ip_address}:{port}/white/cover/garage_door"
+                door_response = requests.get(door_url, auth=auth, timeout=self.connection_timeout)
+                door_response.raise_for_status()
+                door_data = door_response.json()
+                
+                # Get light status
+                light_url = f"http://{ip_address}:{port}/white/light/garage_light"
+                light_response = requests.get(light_url, auth=auth, timeout=self.connection_timeout)
+                light_response.raise_for_status()
+                light_data = light_response.json()
+            
+            # Try to get additional states (lock, motion, obstruction)
+            try:
+                lock_url = f"http://{ip_address}:{port}/api/v2/lock/lock"
+                lock_response = requests.get(lock_url, auth=auth, timeout=self.connection_timeout)
+                lock_response.raise_for_status()
+                lock_data = lock_response.json()
+            except:
+                try:
+                    lock_url = f"http://{ip_address}:{port}/white/lock/lock"
+                    lock_response = requests.get(lock_url, auth=auth, timeout=self.connection_timeout)
+                    lock_response.raise_for_status()
+                    lock_data = lock_response.json()
+                except:
+                    lock_data = {'state': 'UNKNOWN'}
+            
+            try:
+                motion_url = f"http://{ip_address}:{port}/api/v2/binary_sensor/motion"
+                motion_response = requests.get(motion_url, auth=auth, timeout=self.connection_timeout)
+                motion_response.raise_for_status()
+                motion_data = motion_response.json()
+            except:
+                try:
+                    motion_url = f"http://{ip_address}:{port}/white/binary_sensor/motion"
+                    motion_response = requests.get(motion_url, auth=auth, timeout=self.connection_timeout)
+                    motion_response.raise_for_status()
+                    motion_data = motion_response.json()
+                except:
+                    motion_data = {'state': 'OFF', 'value': False}
+            
+            try:
+                obstruction_url = f"http://{ip_address}:{port}/api/v2/binary_sensor/obstruction"
+                obstruction_response = requests.get(obstruction_url, auth=auth, timeout=self.connection_timeout)
+                obstruction_response.raise_for_status()
+                obstruction_data = obstruction_response.json()
+            except:
+                try:
+                    obstruction_url = f"http://{ip_address}:{port}/white/binary_sensor/obstruction"
+                    obstruction_response = requests.get(obstruction_url, auth=auth, timeout=self.connection_timeout)
+                    obstruction_response.raise_for_status()
+                    obstruction_data = obstruction_response.json()
+                except:
+                    obstruction_data = {'state': 'OFF', 'value': False}
+            
+            return {
+                'door': door_data,
+                'light': light_data,
+                'lock': lock_data,
+                'motion': motion_data,
+                'obstruction': obstruction_data
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error getting GDO White status from {ip_address}: {e}")
             return None
 
     def update_sensor_state(self, device, zone_data):
@@ -633,6 +761,101 @@ class Plugin(indigo.PluginBase):
             self.logger.error(f"Error controlling GDO door for {device.name}: {e}")
             return False
 
+    def control_gdo_white_door(self, device, command, position=None):
+        """Control GDO White garage door"""
+        try:
+            ip_address = device.pluginProps.get("ip_address")
+            port = int(device.pluginProps.get("port", "80"))
+            username = device.pluginProps.get("auth_username")
+            password = device.pluginProps.get("auth_password")
+            
+            auth = None
+            if username and password:
+                auth = (username, password)
+            
+            # Map commands to endpoints for GDO White devices
+            # Try V2 API first, then fallback to White-specific paths
+            if command == 'position' and position is not None:
+                # Try V2 API first
+                try:
+                    url = f"http://{ip_address}:{port}/api/v2/cover/garage_door/set"
+                    params = {'position': position / 100.0}  # Convert percentage to decimal
+                    response = requests.post(url, params=params, auth=auth, timeout=self.connection_timeout)
+                except requests.exceptions.RequestException:
+                    # Fallback to White API
+                    url = f"http://{ip_address}:{port}/white/cover/garage_door/set"
+                    params = {'position': position / 100.0}
+                    response = requests.post(url, params=params, auth=auth, timeout=self.connection_timeout)
+            else:
+                endpoint_map_v2 = {
+                    'open': '/api/v2/cover/garage_door/open',
+                    'close': '/api/v2/cover/garage_door/close',
+                    'stop': '/api/v2/cover/garage_door/stop',
+                    'toggle': '/api/v2/cover/garage_door/toggle'
+                }
+                
+                endpoint_map_white = {
+                    'open': '/white/cover/garage_door/open',
+                    'close': '/white/cover/garage_door/close',
+                    'stop': '/white/cover/garage_door/stop',
+                    'toggle': '/white/cover/garage_door/toggle'
+                }
+                
+                # Try V2 API first
+                try:
+                    endpoint = endpoint_map_v2.get(command)
+                    if endpoint:
+                        url = f"http://{ip_address}:{port}{endpoint}"
+                        response = requests.post(url, auth=auth, timeout=self.connection_timeout)
+                except requests.exceptions.RequestException:
+                    # Fallback to White API
+                    endpoint = endpoint_map_white.get(command)
+                    if endpoint:
+                        url = f"http://{ip_address}:{port}{endpoint}"
+                        response = requests.post(url, auth=auth, timeout=self.connection_timeout)
+                    else:
+                        self.logger.error(f"Unknown command: {command}")
+                        return False
+            
+            response.raise_for_status()
+            self.logger.info(f"GDO White door command '{command}' sent successfully for {device.name}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error controlling GDO White door for {device.name}: {e}")
+            return False
+
+    def control_gdo_white_light(self, device, command):
+        """Control GDO White garage light"""
+        try:
+            ip_address = device.pluginProps.get("ip_address")
+            port = int(device.pluginProps.get("port", "80"))
+            username = device.pluginProps.get("auth_username")
+            password = device.pluginProps.get("auth_password")
+            
+            auth = None
+            if username and password:
+                auth = (username, password)
+            
+            # Try V2 API first
+            try:
+                endpoint = f"/api/v2/light/garage_light/{command}"
+                url = f"http://{ip_address}:{port}{endpoint}"
+                response = requests.post(url, auth=auth, timeout=self.connection_timeout)
+            except requests.exceptions.RequestException:
+                # Fallback to White API
+                endpoint = f"/white/light/garage_light/{command}"
+                url = f"http://{ip_address}:{port}{endpoint}"
+                response = requests.post(url, auth=auth, timeout=self.connection_timeout)
+            
+            response.raise_for_status()
+            self.logger.info(f"GDO White light command '{command}' sent successfully for {device.name}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error controlling GDO White light for {device.name}: {e}")
+            return False
+
     def control_gdo_light(self, device, command):
         """Control GDO Blaq garage light"""
         try:
@@ -719,6 +942,58 @@ class Plugin(indigo.PluginBase):
             
         except Exception as e:
             self.logger.error(f"Error updating GDO states for {device.name}: {e}")
+
+    def update_gdo_white_states(self, device, status_data):
+        """Update GDO White device states based on status data"""
+        if not status_data:
+            return
+            
+        try:
+            # Update door states
+            if 'door' in status_data and status_data['door']:
+                door_data = status_data['door']
+                
+                # Door state (OPEN/CLOSED)
+                door_state = door_data.get('state', 'UNKNOWN')
+                device.updateStateOnServer("door_state", door_state)
+                
+                # Current operation (IDLE/OPENING/CLOSING)
+                door_operation = door_data.get('current_operation', 'UNKNOWN')
+                device.updateStateOnServer("door_operation", door_operation)
+                
+                # Door position (0-100%)
+                door_value = door_data.get('value', 0)
+                door_position = int(door_value * 100) if door_value is not None else 0
+                device.updateStateOnServer("door_position", door_position)
+            
+            # Update light state
+            if 'light' in status_data and status_data['light']:
+                light_data = status_data['light']
+                light_state = light_data.get('state', 'OFF') == 'ON'
+                device.updateStateOnServer("light_state", light_state)
+            
+            # Update lock state
+            if 'lock' in status_data and status_data['lock']:
+                lock_data = status_data['lock']
+                lock_state = lock_data.get('state', 'UNKNOWN')
+                device.updateStateOnServer("lock_state", lock_state)
+            
+            # Update motion sensor
+            if 'motion' in status_data and status_data['motion']:
+                motion_data = status_data['motion']
+                motion_detected = motion_data.get('value', False)
+                device.updateStateOnServer("motion_detected", motion_detected)
+            
+            # Update obstruction sensor
+            if 'obstruction' in status_data and status_data['obstruction']:
+                obstruction_data = status_data['obstruction']
+                obstruction_detected = obstruction_data.get('value', False)
+                device.updateStateOnServer("obstruction_detected", obstruction_detected)
+            
+            self.logger.debug(f"Updated GDO White states for {device.name}")
+            
+        except Exception as e:
+            self.logger.error(f"Error updating GDO White states for {device.name}: {e}")
 
     def actionControlDevice(self, action, device):
         """Handle device control actions"""
@@ -1012,6 +1287,61 @@ class Plugin(indigo.PluginBase):
         
         indigo.server.log(message)
 
+    # GDO White Action Methods
+    def open_garage_door_white_action(self, plugin_action, device):
+        """Action method to open GDO White garage door"""
+        self.control_gdo_white_door(device, 'open')
+
+    def close_garage_door_white_action(self, plugin_action, device):
+        """Action method to close GDO White garage door"""
+        self.control_gdo_white_door(device, 'close')
+
+    def stop_garage_door_white_action(self, plugin_action, device):
+        """Action method to stop GDO White garage door"""
+        self.control_gdo_white_door(device, 'stop')
+
+    def toggle_garage_door_white_action(self, plugin_action, device):
+        """Action method to toggle GDO White garage door"""
+        self.control_gdo_white_door(device, 'toggle')
+
+    def set_garage_door_position_white_action(self, plugin_action, device):
+        """Action method to set GDO White garage door position"""
+        try:
+            position = int(plugin_action.props.get("position", "50"))
+            position = max(0, min(100, position))  # Clamp to 0-100%
+            self.control_gdo_white_door(device, 'position', position)
+        except ValueError:
+            self.logger.error("Invalid position value for GDO White garage door")
+
+    def toggle_garage_light_white_action(self, plugin_action, device):
+        """Action method to toggle GDO White garage light"""
+        self.control_gdo_white_light(device, 'toggle')
+
+    def refresh_gdo_white_status_action(self, plugin_action, device):
+        """Action method to refresh GDO White status immediately"""
+        ip_address = device.pluginProps.get("ip_address")
+        port = int(device.pluginProps.get("port", "80"))
+        username = device.pluginProps.get("auth_username")
+        password = device.pluginProps.get("auth_password")
+        
+        status = self.get_gdo_white_status(ip_address, port, username, password)
+        
+        if status:
+            device.updateStateOnServer("connection_status", "Connected")
+            self.update_gdo_white_states(device, status)
+            
+            door_state = status.get('door', {}).get('state', 'Unknown')
+            message = f"GDO White {device.name} status refreshed successfully:\n"
+            message += f"  - Connection: Connected\n"
+            message += f"  - Door State: {door_state}\n"
+            message += f"  - Light: {'ON' if status.get('light', {}).get('state') == 'ON' else 'OFF'}"
+            
+        else:
+            device.updateStateOnServer("connection_status", "Disconnected")
+            message = f"Failed to connect to GDO White {device.name} at {ip_address}:{port}"
+        
+        indigo.server.log(message)
+
     ################################################################################
     # Menu Methods
     ################################################################################
@@ -1256,6 +1586,188 @@ class GDOMonitorThread(threading.Thread):
                     time.sleep(0.1)
         
         self.plugin.logger.debug(f"GDO monitor thread stopped for {self.device.name}")
+
+################################################################################
+class GDOWhiteMonitorThread(threading.Thread):
+    """Thread to monitor a GDO White device"""
+    
+    def __init__(self, plugin, device):
+        super(GDOWhiteMonitorThread, self).__init__()
+        self.plugin = plugin
+        self.device = device
+        self.stop_thread = False
+        self.consecutive_errors = 0
+        self.eventsource_client = None
+    
+    def stop(self):
+        """Stop the monitoring thread"""
+        self.stop_thread = True
+        if self.eventsource_client:
+            self.eventsource_client.close()
+    
+    def _handle_sse_event(self, event):
+        """Handle SSE event for GDO White device"""
+        try:
+            event_type = event.get('event', '')
+            event_data = event.get('data', {})
+            
+            # Reset error counter on successful event
+            self.consecutive_errors = 0
+            
+            # Handle different event types
+            if event_type == 'state' or event_type == 'message':
+                # This is a general state update - parse and update states
+                self.plugin.update_gdo_white_states(self.device, event_data)
+                self.plugin.logger.debug(f"Updated GDO White states via SSE for {self.device.name}")
+                
+            elif event_type == 'door':
+                # Door-specific event
+                door_data = {'door': event_data}
+                self.plugin.update_gdo_white_states(self.device, door_data)
+                self.plugin.logger.debug(f"Updated GDO White door state via SSE for {self.device.name}")
+                
+            elif event_type == 'light':
+                # Light-specific event  
+                light_data = {'light': event_data}
+                self.plugin.update_gdo_white_states(self.device, light_data)
+                self.plugin.logger.debug(f"Updated GDO White light state via SSE for {self.device.name}")
+                
+            else:
+                self.plugin.logger.debug(f"Unknown SSE event type '{event_type}' for {self.device.name}")
+                
+        except Exception as e:
+            self.plugin.logger.error(f"Error handling SSE event for {self.device.name}: {e}")
+    
+    def _try_eventsource_monitoring(self, ip_address, port, auth):
+        """Try to use EventSource for monitoring GDO White"""
+        try:
+            # Try common SSE endpoints for GDO White devices
+            sse_endpoints = ['/api/v2/events', '/white/events', '/api/v2/stream', '/white/stream', '/events', '/stream']
+            
+            for endpoint in sse_endpoints:
+                sse_url = f"http://{ip_address}:{port}{endpoint}"
+                
+                try:
+                    self.eventsource_client = EventSource(sse_url, auth=auth, timeout=10)
+                    self.eventsource_client.on_event = self._handle_sse_event
+                    
+                    if self.eventsource_client.connect():
+                        self.plugin.logger.info(f"Connected to GDO White EventSource at {endpoint} for {self.device.name}")
+                        self.device.updateStateOnServer("connection_status", "Connected (SSE)")
+                        
+                        # Listen for events
+                        success = self.eventsource_client.listen()
+                        
+                        if not success and not self.stop_thread:
+                            self.plugin.logger.warning(f"EventSource connection lost for {self.device.name}")
+                            continue  # Try next endpoint
+                        else:
+                            return True  # Successfully used EventSource
+                    
+                except Exception as e:
+                    self.plugin.logger.debug(f"SSE endpoint {endpoint} failed for {self.device.name}: {e}")
+                    continue
+                    
+            # If we get here, none of the SSE endpoints worked
+            return False
+            
+        except Exception as e:
+            self.plugin.logger.debug(f"EventSource monitoring failed for GDO White {self.device.name}: {e}")
+            return False
+        finally:
+            if self.eventsource_client:
+                self.eventsource_client.close()
+                self.eventsource_client = None
+            return False
+        
+    def run(self):
+        """Main monitoring loop for GDO White devices"""
+        ip_address = self.device.pluginProps.get("ip_address")
+        port = int(self.device.pluginProps.get("port", "80"))
+        username = self.device.pluginProps.get("auth_username")
+        password = self.device.pluginProps.get("auth_password")
+        use_eventsource = self.device.pluginProps.get("use_eventsource", True)
+        poll_frequency = int(self.device.pluginProps.get("poll_frequency", "10"))
+        
+        auth = None
+        if username and password:
+            auth = (username, password)
+        
+        self.plugin.logger.debug(f"Starting GDO White monitor thread for {self.device.name}")
+        
+        # Try EventSource first if enabled
+        if use_eventsource:
+            self.plugin.logger.info(f"Attempting EventSource monitoring for GDO White {self.device.name}")
+            
+            # Keep trying EventSource while the thread is running
+            while not self.stop_thread:
+                if self._try_eventsource_monitoring(ip_address, port, auth):
+                    # EventSource monitoring completed successfully or was stopped
+                    break
+                
+                # If EventSource failed and we should retry
+                if not self.stop_thread and self.plugin.retry_failed_connections:
+                    self.device.updateStateOnServer("connection_status", "Retrying")
+                    self.plugin.logger.info(f"Retrying EventSource connection for GDO White {self.device.name} in 30 seconds")
+                    
+                    # Wait before retrying (check stop flag every second)
+                    for _ in range(30):
+                        if self.stop_thread:
+                            break
+                        time.sleep(1)
+                else:
+                    # Fall through to polling if retries disabled
+                    break
+        
+        # Fall back to polling if EventSource failed or was disabled
+        if not self.stop_thread:
+            self.plugin.logger.info(f"Using polling monitoring for GDO White {self.device.name}")
+            
+            while not self.stop_thread:
+                try:
+                    # Get device status via polling
+                    status = self.plugin.get_gdo_white_status(ip_address, port, username, password)
+                    
+                    if status:
+                        # Update device connection status
+                        self.device.updateStateOnServer("connection_status", "Connected (Polling)")
+                        
+                        # Reset consecutive error counter on successful connection
+                        self.consecutive_errors = 0
+                        
+                        # Update device states
+                        self.plugin.update_gdo_white_states(self.device, status)
+                                
+                    else:
+                        # Handle connection failure
+                        self.consecutive_errors += 1
+                        
+                        if self.plugin.retry_failed_connections and self.consecutive_errors < 5:
+                            # Update connection status to retrying
+                            self.device.updateStateOnServer("connection_status", "Retrying")
+                            self.plugin.logger.warning(f"GDO White connection failed for {self.device.name}, attempt {self.consecutive_errors}/5")
+                        else:
+                            # Update connection status to disconnected
+                            self.device.updateStateOnServer("connection_status", "Disconnected")
+                        
+                except Exception as e:
+                    self.plugin.logger.error(f"Error in GDO White monitor thread for {self.device.name}: {e}")
+                    self.device.updateStateOnServer("connection_status", "Error")
+                    
+                    self.consecutive_errors += 1
+                    
+                    # If too many consecutive errors, increase poll frequency to reduce load
+                    if self.consecutive_errors >= 3:
+                        poll_frequency = min(poll_frequency * 2, 300)  # Cap at 5 minutes
+                        self.plugin.logger.warning(f"Increased GDO White poll frequency to {poll_frequency}s due to errors")
+                    
+                # Wait for next poll cycle
+                for _ in range(poll_frequency * 10):  # Check stop flag every 0.1 seconds
+                    if self.stop_thread:
+                        break
+                    time.sleep(0.1)
+        
+        self.plugin.logger.debug(f"GDO White monitor thread stopped for {self.device.name}")
 
 ################################################################################
 class KonnectedMonitorThread(threading.Thread):
