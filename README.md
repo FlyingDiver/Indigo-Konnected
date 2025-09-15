@@ -11,6 +11,7 @@ This plugin enables integration between the [Indigo Home Automation](http://www.
 - **Sensor Support**: Monitor door/window sensors, motion detectors, smoke alarms, CO detectors, water leak sensors, and more
 - **Output Control**: Control sirens, strobe lights, and other relay-based outputs
 - **GDO Blaq Support**: Full support for Konnected GDO Blaq garage door controllers
+- **GDO White Support**: Full support for Konnected GDO White garage door controllers with enhanced API compatibility
 - **Real-time Updates**: Monitor sensor states with configurable polling intervals
 - **Multiple Panels**: Support for multiple Konnected panels and GDO devices on the same network
 
@@ -74,6 +75,26 @@ Smart garage door controllers with advanced features.
 - **Use EventSource (SSE)**: Enable Server-Sent Events for real-time monitoring (recommended)
 - Polling Frequency: Fallback polling interval when SSE is disabled or unavailable (5-60 seconds)
 
+### Konnected GDO White
+Smart garage door controllers with advanced features, using newer API endpoints.
+
+**Supported Features:**
+- Garage door control (open/close/stop/position)
+- Garage light control
+- Motion detection (if equipped)
+- Obstruction sensor monitoring
+- Remote control lock/unlock
+- Real-time door position tracking
+- **EventSource (SSE) monitoring**: Real-time status updates without polling for improved responsiveness and reduced network traffic
+- **Enhanced API compatibility**: Supports both V2 API endpoints and White-specific paths
+
+**Configuration:**
+- IP Address: The network IP address of your GDO White device
+- Port: Network port (typically 80)
+- Username/Password: Optional authentication credentials
+- **Use EventSource (SSE)**: Enable Server-Sent Events for real-time monitoring (recommended)
+- Polling Frequency: Fallback polling interval when SSE is disabled or unavailable (5-60 seconds)
+
 ## Installation
 
 1. Download the plugin from the [Releases](https://github.com/FlyingDiver/Indigo-Konnected/releases) page
@@ -129,6 +150,17 @@ Smart garage door controllers with advanced features.
    - **Use EventSource (SSE)**: Leave enabled for real-time updates (recommended)
    - **Polling Frequency**: Fallback polling interval (10 seconds recommended)
 
+### Setting up GDO White Devices
+
+1. Create a new device and select "Konnected GDO White"
+2. Configure:
+   - **Name**: Give your GDO device a descriptive name
+   - **IP Address**: Enter the IP address of your GDO White device
+   - **Port**: Usually 80 (default)
+   - **Username/Password**: Enter credentials if authentication is enabled
+   - **Use EventSource (SSE)**: Leave enabled for real-time updates (recommended)
+   - **Polling Frequency**: Fallback polling interval (10 seconds recommended)
+
 ## Actions and Controls
 
 ### Available Actions
@@ -141,6 +173,10 @@ Smart garage door controllers with advanced features.
 - **Set Garage Door Position**: Move door to specific position (0-100%)
 - **Toggle Garage Light**: Control GDO garage lighting
 - **Refresh GDO Status**: Update GDO device status immediately
+- **Open/Close/Stop Garage Door (White)**: Control GDO White garage doors
+- **Set Garage Door Position (White)**: Move GDO White door to specific position (0-100%)
+- **Toggle Garage Light (White)**: Control GDO White garage lighting
+- **Refresh GDO White Status**: Update GDO White device status immediately
 
 ### Device Controls
 
@@ -148,6 +184,8 @@ Smart garage door controllers with advanced features.
 - **Outputs**: Can be turned on/off manually or via triggers/schedules
 - **GDO Doors**: Can be opened, closed, stopped, or positioned via actions
 - **GDO Lights**: Can be controlled independently of door operation
+- **GDO White Doors**: Can be opened, closed, stopped, or positioned via actions (enhanced API compatibility)
+- **GDO White Lights**: Can be controlled independently of door operation
 
 ## Troubleshooting
 
@@ -186,6 +224,12 @@ The plugin communicates with Konnected devices using their REST API:
 **GDO Blaq Communication:**
 - **EventSource (SSE)**: Real-time monitoring via Server-Sent Events on endpoints like `/events`, `/stream`
 - **REST API**: Fallback polling using endpoints like `/cover/garage_door`, `/light/garage_light`
+- **Event Types**: Supports `door`, `light`, `state`, and `message` event types for comprehensive monitoring
+
+**GDO White Communication:**
+- **Enhanced API Support**: Supports both V2 API endpoints (`/api/v2/*`) and White-specific paths (`/white/*`)
+- **EventSource (SSE)**: Real-time monitoring via Server-Sent Events on endpoints like `/api/v2/events`, `/white/events`
+- **REST API**: Fallback polling with automatic endpoint detection and fallback
 - **Event Types**: Supports `door`, `light`, `state`, and `message` event types for comprehensive monitoring
 
 ### Network Requirements

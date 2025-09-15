@@ -208,6 +208,96 @@ def test_gdo_sse_logic():
     
     print("GDO SSE event logic tests completed!")
 
+def test_gdo_white_functionality():
+    """Test GDO White specific functionality"""
+    print("\n" + "=" * 40)
+    print("Testing GDO White Device Logic")
+    print("=" * 40)
+    
+    # Simulate GDO White device response
+    mock_gdo_white_response = {
+        "door": {
+            "id": "garage_door",
+            "state": "CLOSED",
+            "current_operation": "IDLE",
+            "value": 0
+        },
+        "light": {
+            "id": "garage_light",
+            "state": "OFF"
+        },
+        "lock": {
+            "id": "lock",
+            "state": "UNLOCKED",
+            "value": 0
+        },
+        "motion": {
+            "id": "motion",
+            "state": "OFF",
+            "value": False
+        },
+        "obstruction": {
+            "id": "obstruction",
+            "state": "OFF",
+            "value": False
+        }
+    }
+    
+    print("Simulated GDO White response:")
+    print(json.dumps(mock_gdo_white_response, indent=2))
+    print()
+    
+    # Test state parsing (same as regular GDO but with different API paths)
+    door_state = mock_gdo_white_response['door']['state']
+    door_operation = mock_gdo_white_response['door']['current_operation'] 
+    door_position = int(mock_gdo_white_response['door']['value'] * 100)
+    light_state = mock_gdo_white_response['light']['state']
+    lock_state = mock_gdo_white_response['lock']['state']
+    motion_state = "DETECTED" if mock_gdo_white_response['motion']['value'] else "NONE"
+    obstruction_state = "DETECTED" if mock_gdo_white_response['obstruction']['value'] else "CLEAR"
+    
+    print("GDO White states:")
+    print(f"  Door: {door_state} - {door_operation} ({door_position}%)")
+    print(f"  Light: {light_state}")
+    print(f"  Lock: {lock_state}")
+    print(f"  Motion: {motion_state}")
+    print(f"  Obstruction: {obstruction_state}")
+    
+    print("GDO White device logic tests completed!")
+
+def test_gdo_white_api_paths():
+    """Test GDO White API path differences"""
+    print("\n" + "=" * 40)
+    print("Testing GDO White API Paths")
+    print("=" * 40)
+    
+    # Test different API paths that GDO White might use
+    api_v2_paths = [
+        "/api/v2/cover/garage_door",
+        "/api/v2/light/garage_light", 
+        "/api/v2/lock/lock",
+        "/api/v2/binary_sensor/motion",
+        "/api/v2/binary_sensor/obstruction"
+    ]
+    
+    white_specific_paths = [
+        "/white/cover/garage_door",
+        "/white/light/garage_light",
+        "/white/lock/lock", 
+        "/white/binary_sensor/motion",
+        "/white/binary_sensor/obstruction"
+    ]
+    
+    print("API v2 paths for GDO White:")
+    for path in api_v2_paths:
+        print(f"  {path}")
+    
+    print("\nWhite-specific fallback paths:")
+    for path in white_specific_paths:
+        print(f"  {path}")
+    
+    print("GDO White API path tests completed!")
+
 def test_plugin_logic():
     """Test core plugin logic without Indigo"""
     print("Testing Konnected Plugin Logic")
@@ -275,6 +365,10 @@ def test_plugin_logic():
     
     # Test mDNS discovery functionality
     test_mdns_discovery()
+    
+    # Test GDO White functionality
+    test_gdo_white_functionality()
+    test_gdo_white_api_paths()
 
 def test_mdns_discovery():
     """Test mDNS discovery functionality (mock test)"""
